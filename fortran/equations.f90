@@ -115,6 +115,8 @@
         logical TightCoupling, TensTightCoupling
         real(dl) TightSwitchoffTime
 
+        real(dl) DESwitchTime
+
         !Numer of scalar equations we are propagating
         integer ScalEqsToPropagate
         integer TensEqsToPropagate
@@ -245,14 +247,15 @@
     recursive subroutine GaugeInterface_EvolveScal(EV,tau,y,tauend,tol1,ind,c,w)
     use Recombination, only : CB1
     type(EvolutionVars) EV, EVout
-    real(dl) c(24),w(EV%nvar,9), y(EV%nvar), yout(EV%nvar), tol1, tau, tauend
+    real(dl) c(24),w(EV%nvar,9), y(EV%nvar), yout(EV%nvar), tol1, tau, tauend, yprime(EV%nvar)
     integer ind, nu_i
     real(dl) cs2, opacity, dopacity
     real(dl) tau_switch_ktau, tau_switch_nu_massless, tau_switch_nu_massive, next_switch
     real(dl) tau_switch_no_nu_multpoles, tau_switch_no_phot_multpoles,tau_switch_nu_nonrel
     real(dl) noSwitch, smallTime
     !Sources
-    real(dl) tau_switch_saha, Delta_TM, xe,a,tau_switch_evolve_TM
+    real(dl) tau_switch_saha, Delta_TM, xe,a,tau_switch_evolve_TM, tau_switch_de
+    real(dl) z
 
     noSwitch= State%tau0+1
     smallTime =  min(tau, 1/EV%k_buf)/100
@@ -271,6 +274,8 @@
     if (CP%Evolve_delta_xe .and. EV%saha)  tau_switch_saha = EV%ThermoData%recombination_saha_tau
     tau_switch_evolve_TM=noSwitch
     if (EV%Evolve_baryon_cs .and. .not. EV%Evolve_tm) tau_switch_evolve_TM = EV%ThermoData%recombination_Tgas_tau
+    tau_switch_de = noSwitch
+    if (EV%DESwitchTime > 0) tau_switch_de= EV%DESwitchTime
 
     !Evolve equations from tau to tauend, performing switches in equations if necessary.
 
@@ -301,7 +306,7 @@
 
     next_switch = min(tau_switch_ktau, tau_switch_nu_massless,EV%TightSwitchoffTime, tau_switch_nu_massive, &
         tau_switch_no_nu_multpoles, tau_switch_no_phot_multpoles, tau_switch_nu_nonrel, noSwitch, &
-        tau_switch_saha, tau_switch_evolve_TM)
+        tau_switch_saha, tau_switch_evolve_TM, tau_switch_de)
 
     if (next_switch < tauend) then
         if (next_switch > tau+smallTime) then
@@ -422,6 +427,18 @@
             y=yout
             EV=EVout
             y(EV%Tg_ix) =y(EV%g_ix)/4 ! assume delta_TM = delta_T_gamma
+        else if (next_switch==tau_switch_de) then
+            call derivs(EV,EV%ScalEqsToPropagate,tau,y,yprime)
+            EVout%DESwitchTime = noSwitch
+            !Sources
+            ind=1
+            call SetupScalarArrayIndices(EVout)
+            call CopyScalarVariableArray(y,yout, EV, EVout)
+            y=yout
+            EV=EVout
+            call EV%ThermoData%Values(tau,a, cs2,opacity)
+            z = -yprime(ix_clxc)/EV%k_buf
+            call CP%DarkEnergy%Switch(EV%w_ix, a, EV%k_buf, z, y)
         end if
 
         call GaugeInterface_EvolveScal(EV,tau,y,tauend,tol1,ind,c,w)
@@ -1817,6 +1834,9 @@
     end if
     if (second_order_tightcoupling) ep=ep*2
     EV%TightSwitchoffTime = min(EV%ThermoData%tight_tau, EV%ThermoData%OpacityToTime(EV%k_buf/ep))
+
+    ! If any switch if needed for DE
+    EV%DESwitchTime = EV%ThermoData%tau_switch_de
 
     y=0
 

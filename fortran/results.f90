@@ -73,6 +73,7 @@
         real(dl) :: tight_tau, actual_opt_depth
         !Times when 1/(opacity*tau) = 0.01, for use switching tight coupling approximation
         real(dl) :: matter_verydom_tau
+        real(dl) :: tau_switch_de
         real(dl) :: recombination_saha_tau
         !sound horizon and recombination redshifts
         real(dl) :: r_drag0, z_star, z_drag  !!JH for updated BAO likelihood.
@@ -265,6 +266,7 @@
     procedure :: SetParams => CAMBdata_SetParams
     procedure :: Free => CAMBdata_Free
     procedure :: grho_no_de
+    procedure :: gpres_no_de
     procedure :: GetReionizationOptDepth
     procedure :: rofChi
     procedure :: cosfunc
@@ -1231,6 +1233,25 @@
 
     end function grho_no_de
 
+    function gpres_no_de(this, a) result(gpresa2)
+    !  Return 8*pi*G*P_no_de*a**4 where P_no_de includes everything except dark energy.
+    class(CAMBdata) :: this
+    real(dl), intent(in) :: a
+    real(dl) gpresa2, rhonu, Pnu
+    integer nu_i
+
+    gpresa2 = (this%grhog + this%grhornomass) / 3
+
+    if (this%CP%Num_Nu_massive /= 0) then
+        !Get massive neutrino density relative to massless
+        do nu_i = 1, this%CP%nu_mass_eigenstates
+            call ThermalNuBack%rho_P(a * this%nu_masses(nu_i), rhonu, Pnu)
+            gpresa2 = gpresa2 + Pnu * this%grhormass(nu_i)
+        end do
+    end if
+
+    end function gpres_no_de
+
     function GetReionizationOptDepth(this)
     class(CAMBdata) :: this
     real(dl) GetReionizationOptDepth
@@ -1850,6 +1871,8 @@
     this%scaleFactor(nthermo) = 1
     this%adot(1) = 1/dtauda(State,a0)
 
+    this%tau_switch_de = 0
+
     tau01=this%tauminn
     do i=2,nthermo
         !Get recombination-independent parts of background now as function of conformal time tau
@@ -1861,6 +1884,9 @@
         this%adot(i) = adot
         if (this%matter_verydom_tau ==0 .and. a > a_verydom) then
             this%matter_verydom_tau = tau
+        end if
+        if (this%tau_switch_de ==0 .and. CP%DarkEnergy%has_switch(a)) then
+            this%tau_switch_de = tau
         end if
         z= 1._dl/a-1._dl
         if (State%num_redshiftwindows>0) then
