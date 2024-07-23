@@ -31,7 +31,7 @@
     ! General base class. Specific implemenetations should inherit, defining Vofphi and setting up
     ! initial conditions and interpolation tables
     type, extends(TDarkEnergyModel) :: TQuintessence
-        integer :: DebugLevel = 0 !higher then zero for some debug output to console
+        integer :: DebugLevel = 1 !higher then zero for some debug output to console
         real(dl) :: astart = 1e-7_dl
         real(dl) :: integrate_tol = 1e-6_dl
         real(dl), dimension(:), allocatable :: sampled_a, phi_a, phidot_a
@@ -63,11 +63,15 @@
         real(dl) :: frac_lambda0 = 1._dl !fraction of dark energy density that is cosmological constant today
         logical :: use_zc = .true. !adjust m to fit zc
         real(dl) :: zc, fde_zc !readshift for peak f_de and f_de at that redshift
+        integer :: oscillation_threshold = 3
         integer :: npoints = 5000 !baseline number of log a steps; will be increased if needed when there are oscillations
         integer :: min_steps_per_osc = 10
         real(dl), dimension(:), allocatable :: fde, ddfde
+        real(dl), private :: a_fluid_switch
+        logical, private :: use_fluid_approximation = .false. 
     contains
     procedure :: Vofphi => TEarlyQuintessence_VofPhi
+    procedure :: BackgroundDensityAndPressure => TEarlyQuintessence_BackgroundDensityAndPressure
     procedure :: Init => TEarlyQuintessence_Init
     procedure :: ReadParams =>  TEarlyQuintessence_ReadParams
     procedure, nopass :: PythonClass => TEarlyQuintessence_PythonClass
@@ -76,6 +80,7 @@
     procedure, private :: fde_peak
     procedure, private :: check_error
     procedure :: calc_zc_fde
+    procedure :: FluidApproximation
 
     end type TEarlyQuintessence
 
@@ -84,7 +89,7 @@
     public TQuintessence, TEarlyQuintessence
     contains
 
-    function VofPhi(this, phi, deriv)
+    function VofPhi(this, phi, deriv, component)
     !Get the quintessence potential as function of phi
     !The input variable phi is sqrt(8*Pi*G)*psi, where psi is the field
     !Returns (8*Pi*G)^(1-deriv/2)*d^{deriv}V(psi)/d^{deriv}psi evaluated at psi
@@ -92,6 +97,7 @@
     class(TQuintessence) :: this
     real(dl) phi,Vofphi
     integer deriv
+    integer, intent(in), optional :: component
 
     call MpiStop('Quintessence classes must override to provide VofPhi')
     VofPhi = 0
@@ -273,29 +279,124 @@
 
     ! Early Quintessence example, axion potential from e.g. arXiv: 1908.06995
 
-    function TEarlyQuintessence_VofPhi(this, phi, deriv) result(VofPhi)
+    function TEarlyQuintessence_VofPhi(this, phi, deriv, component) result(VofPhi)
     !The input variable phi is sqrt(8*Pi*G)*psi
     !Returns (8*Pi*G)^(1-deriv/2)*d^{deriv}V(psi)/d^{deriv}psi evaluated at psi
     !return result is in 1/Mpc^2 units [so times (Mpc/c)^2 to get units in 1/Mpc^2]
     class(TEarlyQuintessence) :: this
     real(dl) phi,Vofphi
     integer deriv
+    integer, intent(in), optional :: component !FULL_POTENTIAL = 0, QUINTESSENCE_ONLY = 1, LCDM_ONLY = 2
     real(dl) theta, costheta
     real(dl), parameter :: units = MPC_in_sec**2 /Tpl**2  !convert to units of 1/Mpc^2
+    integer :: calc_component
 
-    ! Assume f = sqrt(kappa)*f_theory = f_theory/M_pl
-    ! m = m_theory/M_Pl
-    theta = phi/this%f
-    if (deriv==0) then
-        Vofphi = units*this%m**2*this%f**2*(1 - cos(theta))**this%n + this%frac_lambda0*this%State%grhov
-    else if (deriv ==1) then
-        Vofphi = units*this%m**2*this%f*this%n*(1 - cos(theta))**(this%n-1)*sin(theta)
-    else if (deriv ==2) then
-        costheta = cos(theta)
-        Vofphi = units*this%m**2*this%n*(1 - costheta)**(this%n-1)*(this%n*(1+costheta) -1)
+    ! Determine which component(s) to calculate
+    if (present(component)) then
+        calc_component = component
+    else
+        calc_component = 0
+    end if
+
+    ! Initialize VofPhi
+    VofPhi = 0.0_dl
+
+    ! Calculate quintessence part if needed
+    if (calc_component /= 2) then
+        ! Assume f = sqrt(kappa)*f_theory = f_theory/M_pl
+        ! m = m_theory/M_Pl
+        theta = phi/this%f
+        if (deriv==0) then
+            Vofphi = VofPhi + units*this%m**2*this%f**2*(1 - cos(theta))**this%n + this%frac_lambda0*this%State%grhov
+        else if (deriv ==1) then
+            Vofphi = VofPhi + units*this%m**2*this%f*this%n*(1 - cos(theta))**(this%n-1)*sin(theta)
+        else if (deriv ==2) then
+            costheta = cos(theta)
+            Vofphi = VofPhi + units*this%m**2*this%n*(1 - costheta)**(this%n-1)*(this%n*(1+costheta) -1)
+        end if
+    end if
+
+     ! Add LCDM component if needed
+    if (calc_component /= 1 .and. deriv == 0) then
+        VofPhi = VofPhi + this%frac_lambda0*this%State%grhov
     end if
 
     end function TEarlyQuintessence_VofPhi
+
+    subroutine TEarlyQuintessence_BackgroundDensityAndPressure(this, grhov, a, grhov_t, w)
+    !Get grhov_t = 8*pi*rho_de*a**2 and (optionally) equation of state at scale factor a
+    class(TEarlyQuintessence), intent(inout) :: this
+    real(dl), intent(in) :: grhov, a
+    real(dl), intent(out) :: grhov_t
+    real(dl), optional, intent(out) :: w
+    real(dl) V, a2, grhov_lambda, phi, phidot
+    real(dl) grhov_t_fluid
+
+    if (this%is_cosmological_constant) then
+        grhov_t = grhov * a * a
+        if (present(w)) w = -1_dl
+    elseif (a >= this%astart) then
+
+        if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
+            ! Use fluid approximation
+            call this%FluidApproximation(a, grhov_t_fluid, w)
+            
+            !a2 = a**2
+            !call this%ValsAta(a,phi,phidot)
+            !V = this%Vofphi(phi,0)
+            !grhov_t = phidot**2/2 + a2*V
+            !write(*,*) a, grhov_t, grhov_t_fluid
+            !stop
+
+            grhov_t = grhov_t_fluid
+
+            if (present(w)) then
+                w = (phidot**2/2 - a2*V)/grhov_t
+            end if
+        else
+            a2 = a**2
+            call this%ValsAta(a,phi,phidot)
+            V = this%Vofphi(phi,0)
+            grhov_t = phidot**2/2 + a2*V
+            if (present(w)) then
+                w = (phidot**2/2 - a2*V)/grhov_t
+            end if
+        end if
+    else
+        grhov_t=0
+        if (present(w)) w = -1
+    end if
+
+    end subroutine TEarlyQuintessence_BackgroundDensityAndPressure
+
+    subroutine FluidApproximation(this, a, grhov_t, w)
+        class(TEarlyQuintessence), intent(inout) :: this
+        real(dl), intent(in) :: a
+        real(dl), intent(out) :: grhov_t
+        real(dl), optional, intent(out) :: w
+        real(dl) :: rho_avg, p_avg, phi_switch, phidot_switch, V_switch, a_switch, w_approx
+
+        ! Get field values at switch point
+        a_switch = this%a_fluid_switch
+        call this%ValsAta(a_switch, phi_switch, phidot_switch)
+        ! Get quintessence component only
+        V_switch = this%Vofphi(phi_switch, 0, 1)
+
+        ! Approximate average energy density at switch point
+        rho_avg = phidot_switch**2/2 + a_switch**2 * V_switch
+
+        ! For rapid oscillations, time-averaged w ≈ (n - 1) / (n + 1)
+        w_approx = (this%n - 1) / (this%n + 1)
+        
+        ! Seperate LCDM and quintessence fluid approx 
+        grhov_t = this%Vofphi(phi_switch, 0, 2) * a**2 + rho_avg * (a_switch / a)**(3*w_approx + 1)
+
+        if (present(w)) then
+            ! Effective equation of state
+            w = w_approx
+        end if
+
+    end subroutine FluidApproximation
 
 
     subroutine TEarlyQuintessence_Init(this, State)
@@ -309,6 +410,7 @@
     real(dl), parameter :: splZero = 0._dl
     real(dl) lastsign, da_osc, last_a, a_c
     integer :: oscillation_count
+    logical :: threshold_reached = .false.
     real(dl) initial_phi, initial_phidot, a2
     real(dl), dimension(:), allocatable :: sampled_a, phi_a, phidot_a, fde
     integer npoints, tot_points, max_ix
@@ -454,6 +556,10 @@
     last_a = this%astart
     max_ix =0
 
+    if (this%DebugLevel > 0) then
+        write(*,*) 'Oscillation threshold=', this%oscillation_threshold
+    endif
+
     ind=1
     afrom=this%log_astart
     do i=1, npoints-1
@@ -485,6 +591,13 @@
             ! Update da_osc
             da_osc = min(da_osc, exp(aend) - last_a)
             last_a = exp(aend)
+            if (.not. threshold_reached .and. oscillation_count / 2 >= this%oscillation_threshold) then
+                this%a_fluid_switch = sampled_a(ix)
+                threshold_reached = .true.
+                if (this%DebugLevel > 0) then
+                    write(*,*) 'Switching to fluid approximation at a =', this%a_fluid_switch
+                end if
+            end if
         end if
 
         !Define fde as ratio of early dark energy density to total
@@ -499,7 +612,9 @@
         end if
     end do
 
-    write(*, *) oscillation_count, this%max_a_log 
+    if (this%DebugLevel > 0) then
+        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles at linear switch:', oscillation_count
+    end if
 
     ! Do remaining steps with linear spacing in a, trying to be small enough
     this%npoints_log = ix
@@ -535,7 +650,13 @@
         if (sign(1.0_dl, this%phidot_a(ix)) /= lastsign) then
             oscillation_count = oscillation_count + 1
             lastsign = sign(1.0_dl, this%phidot_a(ix))
-            write(*,*) aend, oscillation_count
+            if (.not. threshold_reached .and. oscillation_count / 2 >= this%oscillation_threshold) then
+                this%a_fluid_switch = this%sampled_a(ix)
+                threshold_reached = .true.
+                if (this%DebugLevel > 0) then
+                    write(*,*) 'Switching to fluid approximation at a =', this%a_fluid_switch
+                end if
+            end if
         end if
         this%fde(ix) = 1/((this%state%grho_no_de(aend) +  this%frac_lambda0*this%State%grhov*a2**2) &
             /(a2*(0.5d0* this%phidot_a(ix)**2 + a2*this%Vofphi(y(1),0))) + 1)
@@ -543,6 +664,17 @@
             max_ix = ix-1
         end if
     end do
+
+    ! Calculate the number of full cycles
+    oscillation_count = oscillation_count / 2
+
+    ! Print the result
+    if (this%DebugLevel > 0) then
+        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles:', oscillation_count
+    end if
+
+    ! Set flag to use fluid approximation if threshold was reached
+    this%use_fluid_approximation = threshold_reached
 
     call spline(this%sampled_a,this%phi_a,tot_points,splZero,splZero,this%ddphi_a)
     call spline(this%sampled_a,this%phidot_a,tot_points,splZero,splZero,this%ddphidot_a)
