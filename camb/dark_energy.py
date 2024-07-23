@@ -199,7 +199,8 @@ class EarlyQuintessence(Quintessence):
         ("use_zc", c_bool, "solve for f, m to get specific critical redshift zc and fde_zc"),
         ("zc", c_double, "redshift of peak fractional early dark energy density"),
         ("fde_zc", c_double, "fraction of early dark energy density to total at peak"),
-        ("oscillation_threshold ", c_int, "oscillation_threshold"),
+        ("oscillation_threshold", c_int, "oscillation_threshold"),
+        ("use_fluid_approximation", c_bool, "use fluid approximation"),
         ("npoints", c_int, "number of points for background integration spacing"),
         ("min_steps_per_osc", c_int, "minimum number of steps per background oscillation scale"),
         ("fde", AllocatableArrayDouble, "after initialized, the calculated background early dark energy "
@@ -208,13 +209,15 @@ class EarlyQuintessence(Quintessence):
     ]
     _fortran_class_name_ = 'TEarlyQuintessence'
 
-    def set_params(self, n, f=0.05, m=5e-54, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10):
+    def set_params(self, n, f=0.05, m=5e-54, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10, 
+                   use_fluid_approximation=False):
         self.n = n
         self.f = f
         self.m = m
         self.theta_i = theta_i
         self.use_zc = use_zc
         self.oscillation_threshold = oscillation_threshold
+        self.use_fluid_approximation = use_fluid_approximation
         if use_zc:
             if zc is None or fde_zc is None:
                 raise ValueError("must set zc and fde_zc if using 'use_zc'")

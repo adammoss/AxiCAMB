@@ -64,11 +64,11 @@
         logical :: use_zc = .true. !adjust m to fit zc
         real(dl) :: zc, fde_zc !readshift for peak f_de and f_de at that redshift
         integer :: oscillation_threshold = 3
+        logical :: use_fluid_approximation = .false. 
         integer :: npoints = 5000 !baseline number of log a steps; will be increased if needed when there are oscillations
         integer :: min_steps_per_osc = 10
         real(dl), dimension(:), allocatable :: fde, ddfde
-        real(dl), private :: a_fluid_switch
-        logical, private :: use_fluid_approximation = .false. 
+        real(dl), private :: a_fluid_switch = 1._dl
     contains
     procedure :: Vofphi => TEarlyQuintessence_VofPhi
     procedure :: BackgroundDensityAndPressure => TEarlyQuintessence_BackgroundDensityAndPressure
@@ -410,7 +410,7 @@
     real(dl), parameter :: splZero = 0._dl
     real(dl) lastsign, da_osc, last_a, a_c
     integer :: oscillation_count
-    logical :: threshold_reached = .false.
+    logical :: threshold_reached
     real(dl) initial_phi, initial_phidot, a2
     real(dl), dimension(:), allocatable :: sampled_a, phi_a, phidot_a, fde
     integer npoints, tot_points, max_ix
@@ -426,6 +426,9 @@
     !so grho_no_de can be used to get density and pressure of other components at scale factor a
 
     call this%TQuintessence%Init(State)
+
+    this%a_fluid_switch = 1._dl
+    threshold_reached = .false.
 
     if (this%use_zc) then
         !Find underlying parameters m,f to give specified zc and fde_zc (peak early dark energy fraction)
@@ -672,9 +675,6 @@
     if (this%DebugLevel > 0) then
         write(*,*) 'TEarlyQuintessence: Number of oscillation cycles:', oscillation_count
     end if
-
-    ! Set flag to use fluid approximation if threshold was reached
-    this%use_fluid_approximation = threshold_reached
 
     call spline(this%sampled_a,this%phi_a,tot_points,splZero,splZero,this%ddphi_a)
     call spline(this%sampled_a,this%phidot_a,tot_points,splZero,splZero,this%ddphidot_a)
