@@ -72,6 +72,8 @@
     contains
     procedure :: Vofphi => TEarlyQuintessence_VofPhi
     procedure :: BackgroundDensityAndPressure => TEarlyQuintessence_BackgroundDensityAndPressure
+    procedure :: PerturbationEvolve => TEarlyQuintessence_PerturbationEvolve
+    procedure :: PerturbedStressEnergy => TEarlyQuintessence_PerturbedStressEnergy
     procedure :: Init => TEarlyQuintessence_Init
     procedure :: ReadParams =>  TEarlyQuintessence_ReadParams
     procedure, nopass :: PythonClass => TEarlyQuintessence_PythonClass
@@ -330,7 +332,6 @@
     real(dl), intent(out) :: grhov_t
     real(dl), optional, intent(out) :: w
     real(dl) V, a2, grhov_lambda, phi, phidot
-    real(dl) grhov_t_fluid
 
     if (this%is_cosmological_constant) then
         grhov_t = grhov * a * a
@@ -339,20 +340,7 @@
 
         if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
             ! Use fluid approximation
-            call this%FluidApproximation(a, grhov_t_fluid, w)
-            
-            !a2 = a**2
-            !call this%ValsAta(a,phi,phidot)
-            !V = this%Vofphi(phi,0)
-            !grhov_t = phidot**2/2 + a2*V
-            !write(*,*) a, grhov_t, grhov_t_fluid
-            !stop
-
-            grhov_t = grhov_t_fluid
-
-            if (present(w)) then
-                w = (phidot**2/2 - a2*V)/grhov_t
-            end if
+            call this%FluidApproximation(a, grhov_t, w)
         else
             a2 = a**2
             call this%ValsAta(a,phi,phidot)
@@ -374,7 +362,7 @@
         real(dl), intent(in) :: a
         real(dl), intent(out) :: grhov_t
         real(dl), optional, intent(out) :: w
-        real(dl) :: rho_avg, p_avg, phi_switch, phidot_switch, V_switch, a_switch, w_approx
+        real(dl) :: rho_avg, p_avg, phi_switch, phidot_switch, V_switch, a_switch, w_eff
 
         ! Get field values at switch point
         a_switch = this%a_fluid_switch
@@ -386,18 +374,112 @@
         rho_avg = phidot_switch**2/2 + a_switch**2 * V_switch
 
         ! For rapid oscillations, time-averaged w ≈ (n - 1) / (n + 1)
-        w_approx = (this%n - 1) / (this%n + 1)
+        w_eff = (this%n - 1) / (this%n + 1)
         
         ! Seperate LCDM and quintessence fluid approx 
-        grhov_t = this%Vofphi(phi_switch, 0, 2) * a**2 + rho_avg * (a_switch / a)**(3*w_approx + 1)
+        grhov_t = this%Vofphi(phi_switch, 0, 2) * a**2 + rho_avg * (a_switch / a)**(3*w_eff + 1)
 
         if (present(w)) then
+            ! FIXME - this wants to be combined quintessence + lambda? 
             ! Effective equation of state
-            w = w_approx
+            w = w_eff
         end if
 
     end subroutine FluidApproximation
 
+    subroutine TEarlyQuintessence_PerturbedStressEnergy(this, dgrhoe, dgqe, &
+        a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
+    !Get density perturbation and heat flux
+    class(TEarlyQuintessence), intent(inout) :: this
+    real(dl), intent(out) :: dgrhoe, dgqe
+    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1
+    real(dl), intent(in) :: ay(*)
+    real(dl), intent(inout) :: ayprime(*)
+    integer, intent(in) :: w_ix
+    real(dl) phi, phidot, delta_phi, delta_phidot, w_eff
+
+    delta_phi=ay(w_ix)
+    delta_phidot=ay(w_ix+1)
+
+    if (this%use_fluid_approximation) then
+
+        !call this%ValsAta(a,phi,phidot)
+        !dgrhoe= phidot*delta_phidot + delta_phi*a**2*this%Vofphi(phi,1)
+        !dgqe= k*phidot*delta_phi
+
+        dgrhoe = ay(w_ix+2)*grhov_t
+        dgqe= ay(w_ix+3)*grhov_t
+
+    else
+
+        call this%ValsAta(a,phi,phidot)
+        dgrhoe= phidot*delta_phidot + delta_phi*a**2*this%Vofphi(phi,1)
+        dgqe= k*phidot*delta_phi
+
+    endif
+
+    end subroutine TEarlyQuintessence_PerturbedStressEnergy
+
+    subroutine TEarlyQuintessence_PerturbationEvolve(this, ayprime, w, w_ix, &
+        a, adotoa, k, z, y)
+    !Get conformal time derivatives of the density perturbation and velocity
+    class(TEarlyQuintessence), intent(in) :: this
+    real(dl), intent(inout) :: ayprime(:)
+    real(dl), intent(in) :: a, adotoa, w, k, z, y(:)
+    integer, intent(in) :: w_ix
+    real(dl) clxq, uq, phi, phidot, cs2_eff, w_eff, Hv3_over_k, delta_phi, delta_phidot, phidotdot, grhov_t, V, Vprime, Vprimeprime, a2 
+
+    delta_phi=y(w_ix)
+    delta_phidot=y(w_ix+1)
+
+    call this%ValsAta(a,phi,phidot) !wasting time calling this again..
+
+    if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
+        ! Set scalar field derivatives to zero
+        ayprime(w_ix)= 0
+        ayprime(w_ix+1) = 0
+    else
+        ayprime(w_ix)= delta_phidot
+        ayprime(w_ix+1) = - 2*adotoa*delta_phidot - k*z*phidot - k**2*delta_phi - a**2*delta_phi*this%Vofphi(phi,2)
+    end if
+
+    a2 = a**2
+    V = this%Vofphi(phi,0) 
+    Vprime = this%Vofphi(phi,1) 
+    Vprimeprime = this%Vofphi(phi,2) 
+    phidotdot = - 2 * adotoa * phidot - a2*Vprime
+    grhov_t = phidot**2/2 + a2*V
+
+    clxq=y(w_ix+2)
+    ! Heat flux u = (1+w)v
+    uq=y(w_ix+3)
+
+    if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
+
+        ! FIXME AND CHECK EQUATIONS
+        cs2_eff = 0._dl
+        w_eff = (this%n - 1) / (this%n + 1)
+        Hv3_over_k =  3*adotoa*uq / k
+
+        ayprime(w_ix+2) = -  k * uq - (1 + w_eff) * k * z & 
+            -3 * adotoa * (cs2_eff - w_eff) *  (clxq + Hv3_over_k)
+            
+        ayprime(w_ix+3) = -adotoa * (1 - 3 * cs2_eff) * uq + &
+            k * cs2_eff * clxq 
+
+    else
+
+        ayprime(w_ix+2) = (phidotdot * delta_phidot + phidot * ayprime(w_ix+1) + delta_phidot * a2 * Vprime + & 
+        2 * delta_phi * adotoa * a2 * Vprime + delta_phi * a2 * Vprimeprime * phidot) / grhov_t - & 
+        (phidot * phidotdot + 2 * adotoa * a2 * V + a2 * Vprime * phidot) * (phidot * delta_phidot + delta_phi * a2 * Vprime) / grhov_t**2
+        ayprime(w_ix+3) = k * (phidotdot * delta_phi + phidot * delta_phidot) / grhov_t - & 
+        (phidot * phidotdot + 2 * adotoa * a2 * V) * k * phidot * delta_phi / grhov_t**2 
+        
+
+    endif
+
+
+    end subroutine TEarlyQuintessence_PerturbationEvolve
 
     subroutine TEarlyQuintessence_Init(this, State)
     use Powell
@@ -429,6 +511,8 @@
 
     this%a_fluid_switch = 1._dl
     threshold_reached = .false.
+    ! Evolve both scalar field and fluid equations
+    this%num_perturb_equations = 4
 
     if (this%use_zc) then
         !Find underlying parameters m,f to give specified zc and fde_zc (peak early dark energy fraction)
