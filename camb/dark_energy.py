@@ -210,6 +210,8 @@ class EarlyQuintessence(Quintessence):
         ("sampled_a_fluid", AllocatableArrayDouble),
         ("grhov_fluid", AllocatableArrayDouble),
         ("__ddgrhov_fluid", AllocatableArrayDouble),
+        ("w_fluid", AllocatableArrayDouble),
+        ("__ddw_fluid", AllocatableArrayDouble),
         ("__npoints_fluid", c_int),
         ("__dloga_fluid", c_double),
         ("__a_fluid_switch", c_double)

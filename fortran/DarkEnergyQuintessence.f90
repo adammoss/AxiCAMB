@@ -69,7 +69,7 @@
         integer :: npoints = 5000 !baseline number of log a steps; will be increased if needed when there are oscillations
         integer :: min_steps_per_osc = 10
         real(dl), dimension(:), allocatable :: fde, ddfde
-        real(dl), dimension(:), allocatable :: sampled_a_fluid, grhov_fluid, ddgrhov_fluid
+        real(dl), dimension(:), allocatable :: sampled_a_fluid, grhov_fluid, ddgrhov_fluid, w_fluid, ddw_fluid
         integer, private :: npoints_fluid
         real(dl), private :: dloga_fluid
         real(dl), private :: a_fluid_switch = 1._dl
@@ -335,7 +335,7 @@
     real(dl), intent(in) :: grhov, a
     real(dl), intent(out) :: grhov_t
     real(dl), optional, intent(out) :: w
-    real(dl) V, a2, grhov_lambda, phi, phidot, grhov_fluid
+    real(dl) V, a2, grhov_lambda, phi, phidot, grhov_fluid, w_fluid
 
     if (this%is_cosmological_constant) then
         grhov_t = grhov * a * a
@@ -346,11 +346,11 @@
 
         if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
             ! Use fluid approximation
-            call this%FluidValsAta(a,grhov_fluid)
+            call this%FluidValsAta(a,grhov_fluid, w_fluid)
             V = this%Vofphi(0.0d0,0,2)
             grhov_t = grhov_fluid + a2*V
             if (present(w)) then
-                w = 0
+                w = w_fluid
             end if
         else
             call this%ValsAta(a,phi,phidot)
@@ -367,11 +367,11 @@
 
     end subroutine TEarlyQuintessence_BackgroundDensityAndPressure
 
-    subroutine EvolveBackgroundPH(this,num,loga,y,yprime)
+    subroutine EvolveBackgroundFluid(this,num,loga,y,yprime)
     class(TEarlyQuintessence) :: this
     integer num
     real(dl) y(num),yprime(num)
-    real(dl) loga, a, a2, grhov_t, grhoa2, dtauda, w, H, m
+    real(dl) loga, a, a2, grhov_t, grhoa2, dtauda, w, H, mtilde
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
 
     grhov_t = y(1)
@@ -380,23 +380,28 @@
     grhoa2 = this%state%grho_no_de(a) +  grhov_t * a2
     ! H in cosmological time 
     H = sqrt(grhoa2/3.0d0) /a2
-    m = units * this%m 
-    w = 1.5d0 * (m/H)**(-2)
+    mtilde = units * this%m 
+    if (this%n == 1 .and. this%use_PH) then
+        w = 1.5d0 * (mtilde/H)**(-2)
+    else
+        w = (this%n - 1.0d0) / (this%n + 1.0d0)
+    end if
     yprime(1)= 2*grhov_t/a - 3*(1+w)/a*grhov_t 
     yprime(1) = yprime(1)*a
 
-    end subroutine EvolveBackgroundPH
+    end subroutine EvolveBackgroundFluid
 
 
-    subroutine FluidValsAta(this,a,agrhov_fluid)
+    subroutine FluidValsAta(this,a,agrhov_fluid, aw_fluid)
     class(TEarlyQuintessence) :: this
     !Do interpolation for background phi and phidot at a (precomputed in Init)
-    real(dl) a, agrhov_fluid
+    real(dl) a, agrhov_fluid, aw_fluid
     real(dl) a0,b0,ho2o6,delta,da
     integer ix
 
-    if (a >= 0.99d0) then
+    if (a >= 0.999d0) then
         agrhov_fluid = this%grhov_fluid(this%npoints_fluid)
+        aw_fluid = this%w_fluid(this%npoints_fluid)
         return
     endif
 
@@ -407,6 +412,7 @@
     b0 = 1 - a0
     ho2o6 = da**2/6._dl
     agrhov_fluid=b0*this%grhov_fluid(ix+1) + a0*(this%grhov_fluid(ix)-b0*((a0+1)*this%ddgrhov_fluid(ix)+(2-a0)*this%ddgrhov_fluid(ix+1))*ho2o6)
+    aw_fluid=b0*this%w_fluid(ix+1) + a0*(this%w_fluid(ix)-b0*((a0+1)*this%ddw_fluid(ix)+(2-a0)*this%ddw_fluid(ix+1))*ho2o6)
 
     end subroutine FluidValsAta
 
@@ -518,7 +524,7 @@
     real(dl) lastsign, da_osc, last_a, a_c
     integer :: oscillation_count
     logical :: threshold_reached
-    real(dl) initial_phi, initial_phidot, a2
+    real(dl) initial_phi, initial_phidot, a, a2
     real(dl), dimension(:), allocatable :: sampled_a, phi_a, phidot_a, fde
     integer npoints, tot_points, max_ix
     logical has_peak
@@ -528,7 +534,7 @@
     Type(TNEWUOA) :: Minimize
     real(dl) log_params(2), param_min(2), param_max(2)
     real(dl) phi_switch, phidot_switch, grhov_fluid_switch, gpres_fluid_switch
-    real(dl) :: mtilde, H, dHdt, dphidt, phic, phis, dphicdt, dphisdt, afluid, grho_tot, gpres_tot 
+    real(dl) :: mtilde, H, dHdt, dphidt, phic, phis, dphicdt, dphisdt, afluid, grho_tot, gpres_tot, D, grhoa2
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
 
     !Make interpolation table, etc,
@@ -816,41 +822,51 @@
 
     ! Testing
     !if (this%oscillation_threshold < 10) then
-    !    this%a_fluid_switch = 2d-3
+    !    this%a_fluid_switch = 9.569678071493583e-05
     !end if
 
     call this%ValsAta(this%a_fluid_switch, phi_switch, phidot_switch)
 
-    grhov_fluid_switch = 0.5d0*phidot_switch**2 + this%a_fluid_switch**2*this%Vofphi(phi_switch,0)
-    gpres_fluid_switch = (0.5d0*phidot_switch**2 - this%a_fluid_switch**2*this%Vofphi(phi_switch,0))
+    grhov_fluid_switch = 0.5d0*phidot_switch**2 + this%a_fluid_switch**2*this%Vofphi(phi_switch,0,1)
+    gpres_fluid_switch = 0.5d0*phidot_switch**2 - this%a_fluid_switch**2*this%Vofphi(phi_switch,0,1)
     mtilde = units * this%m
 
-    do i=1, 10
+    !write(*,*) grhov_fluid_switch, phi_switch
 
-        grho_tot = this%state%grho_no_de(this%a_fluid_switch) + this%a_fluid_switch**2*grhov_fluid_switch
-        gpres_tot = this%state%gpres_no_de(this%a_fluid_switch) + this%a_fluid_switch**2*gpres_fluid_switch
+    if (this%use_PH) then
 
-        ! Derivatives with respect to cosmological time. Evaluated at switch
-        dphidt = phidot_switch / this%a_fluid_switch
-        H = sqrt(grho_tot/3.0d0) / this%a_fluid_switch**2 
-        dHdt =  - 0.5d0 * ((grho_tot + gpres_tot)/3.0d0) / this%a_fluid_switch**4 - H**2
-        phic = phi_switch
-        phis = (dphidt*((2*dHdt+3*H**2)**2+16*H**2*mtilde**2)+24*H**3*mtilde**2*phi_switch)/(mtilde*(4*dHdt**2-9*H**4+16*H**2*mtilde**2))
-        dphisdt = (6*H**2*mtilde*(4*dphidt*H-2*dHdt*phi_switch+3*H**2*phi_switch))/(-4*dHdt**2+9*H**4-16*H**2*mtilde**2)
-        dphicdt = (6*H**2*(2*dHdt*dphidt+H*(3*dphidt*H+4*mtilde**2*phi_switch)))/(-4*dHdt**2+9*H**4-16*H**2*mtilde**2)
+        do i=1,3
 
-        grhov_fluid_switch = this%a_fluid_switch**2*(dphisdt**2/4 + dphicdt**2/4 + 0.5d0 * mtilde * (-phic * dphisdt + phis*dphicdt) + 0.5d0 * mtilde**2 * (phic**2 + phis**2)) 
-        gpres_fluid_switch = this%a_fluid_switch**2*(dphisdt**2/4 + dphicdt**2/4 + 0.5d0 * mtilde * (-phic * dphisdt + phis*dphicdt)) 
+            grho_tot = this%state%grho_no_de(this%a_fluid_switch) + this%a_fluid_switch**2*grhov_fluid_switch + this%a_fluid_switch**2*this%Vofphi(phi_switch,0,2)
+            gpres_tot = this%state%gpres_no_de(this%a_fluid_switch) + this%a_fluid_switch**2*gpres_fluid_switch - this%a_fluid_switch**2*this%Vofphi(phi_switch,0,2)
 
-    end do
+            ! Derivatives with respect to cosmological time. Evaluated at switch
+            dphidt = phidot_switch / this%a_fluid_switch
+            H = sqrt(grho_tot/3.0d0) / this%a_fluid_switch**2 
+            dHdt =  - 0.5d0 * (grho_tot/3.0d0 + gpres_tot) / this%a_fluid_switch**4 - H**2
+            D = -H/2 * (3 - 2* dHdt / H**2)
+            phic = phi_switch
+            phis = (dphidt*((D+3*H)**2+4*mtilde**2)+6*H*mtilde**2*phi_switch)/(D*(D+3*H)*mtilde+4*mtilde**3)
+            dphisdt = (3*H*mtilde*(-2*dphidt+D*phi_switch))/(D**2+3*D*H+4*mtilde**2)
+            dphicdt = (-3*H*(D*dphidt+3*dphidt*H+2*mtilde**2*phi_switch))/(D**2+3*D*H+4*mtilde**2)
+
+            grhov_fluid_switch = this%a_fluid_switch**2*(dphisdt**2/4 + dphicdt**2/4 + 0.5d0 * mtilde * (-phic * dphisdt + phis*dphicdt) + 0.5d0 * mtilde**2 * (phic**2 + phis**2)) 
+            gpres_fluid_switch = this%a_fluid_switch**2*(dphisdt**2/4 + dphicdt**2/4 + 0.5d0 * mtilde * (-phic * dphisdt + phis*dphicdt)) 
+
+            !write(*,*) i, grhov_fluid_switch, phi_switch, phic,  phis, phidot_switch,  dphisdt, dphicdt, dphidt, dphicdt + phis * mtilde, D*dphicdt + 2*dphisdt * mtilde, 3*H*(phis)
+            !write(*,*) i, dphidt, dphicdt + phis * mtilde, D*dphicdt + 2*dphisdt * mtilde, 3*H*(phis*mtilde + dphicdt), D*dphisdt - 2*dphicdt * mtilde, 3*H*(-phic*mtilde + dphisdt), dHdt /  H**2
+
+        end do
+
+    end if
 
     this%npoints_fluid = 10000
 
     if (allocated(this%sampled_a_fluid)) then
-        deallocate(this%sampled_a_fluid, this%grhov_fluid, this%ddgrhov_fluid)
+        deallocate(this%sampled_a_fluid, this%grhov_fluid, this%ddgrhov_fluid, this%w_fluid, this%ddw_fluid)
     end if
 
-    allocate(this%sampled_a_fluid(this%npoints_fluid), this%grhov_fluid(this%npoints_fluid), this%ddgrhov_fluid(this%npoints_fluid))
+    allocate(this%sampled_a_fluid(this%npoints_fluid), this%grhov_fluid(this%npoints_fluid), this%ddgrhov_fluid(this%npoints_fluid), this%w_fluid(this%npoints_fluid), this%ddw_fluid(this%npoints_fluid))
 
     this%dloga_fluid = -log(this%a_fluid_switch)/this%npoints_fluid
 
@@ -861,14 +877,26 @@
     do i=1, this%npoints_fluid
         aend = log(this%a_fluid_switch) +  this%dloga_fluid*i
         this%sampled_a_fluid(i) = exp(aend)
-        call dverk(this,NumEqsFluid,EvolveBackgroundPH,afrom,yf,aend,this%integrate_tol,ind,cf,NumEqsFluid,wf)
+        call dverk(this,NumEqsFluid,EvolveBackgroundFluid,afrom,yf,aend,this%integrate_tol,ind,cf,NumEqsFluid,wf)
         if (.not. this%check_error(afrom, aend)) return
-        call EvolveBackgroundPH(this,NumEqsFluid,aend,yf,wf(:,1))
+        call EvolveBackgroundFluid(this,NumEqsFluid,aend,yf,wf(:,1))
         this%grhov_fluid(i) = yf(1)
-        !write(*,*) this%sampled_a_fluid(i), this%grhov_fluid(i) * this%sampled_a_fluid(i)
+        ! Repeated here - couldn't return w from function
+        a = exp(aend)
+        a2=a**2
+        grhoa2 = this%state%grho_no_de(a) +  yf(1) * a2
+        ! H in cosmological time 
+        H = sqrt(grhoa2/3.0d0) /a2
+        if (this%n == 1 .and. this%use_PH) then
+            this%w_fluid(i)  = 1.5d0 * (mtilde/H)**(-2)
+        else
+            this%w_fluid(i) = (this%n - 1.0d0) / (this%n + 1.0d0)
+        end if
+        !write(*,*) this%sampled_a_fluid(i), this%grhov_fluid(i), this%w_fluid(i) 
     end do
 
     call spline(this%sampled_a_fluid,this%grhov_fluid,this%npoints_fluid,splZero,splZero,this%ddgrhov_fluid)
+    call spline(this%sampled_a_fluid,this%w_fluid,this%npoints_fluid,splZero,splZero,this%ddw_fluid)
 
     end subroutine TEarlyQuintessence_Init
 
