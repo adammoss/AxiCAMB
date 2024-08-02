@@ -69,7 +69,7 @@
         integer :: npoints = 5000 !baseline number of log a steps; will be increased if needed when there are oscillations
         integer :: min_steps_per_osc = 10
         real(dl), dimension(:), allocatable :: fde, ddfde
-        real(dl), dimension(:), allocatable :: sampled_a_fluid, grhov_fluid, ddgrhov_fluid, w_fluid, ddw_fluid
+        real(dl), dimension(:), allocatable :: sampled_a_fluid, grhov_fluid, ddgrhov_fluid, w_fluid, ddw_fluid, dwdloga_fluid, dddwdloga_fluid
         integer, private :: npoints_fluid
         real(dl), private :: dloga_fluid
         real(dl), private :: a_fluid_switch = 1._dl
@@ -335,7 +335,7 @@
     real(dl), intent(in) :: grhov, a
     real(dl), intent(out) :: grhov_t
     real(dl), optional, intent(out) :: w
-    real(dl) V, a2, grhov_lambda, phi, phidot, grhov_fluid, w_fluid
+    real(dl) V, a2, grhov_lambda, phi, phidot, grhov_fluid, w_fluid, dwdloga_fluid
 
     if (this%is_cosmological_constant) then
         grhov_t = grhov * a * a
@@ -346,11 +346,12 @@
 
         if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
             ! Use fluid approximation
-            call this%FluidValsAta(a,grhov_fluid, w_fluid)
+            call this%FluidValsAta(a,grhov_fluid, w_fluid, dwdloga_fluid)
             V = this%Vofphi(0.0d0,0,2)
             grhov_t = grhov_fluid + a2*V
             if (present(w)) then
-                w = w_fluid
+                ! This is the combined quintessence + lambda value
+                w = (w_fluid * grhov_fluid - a2*V) / grhov_t
             end if
         else
             call this%ValsAta(a,phi,phidot)
@@ -392,16 +393,17 @@
     end subroutine EvolveBackgroundFluid
 
 
-    subroutine FluidValsAta(this,a,agrhov_fluid, aw_fluid)
+    subroutine FluidValsAta(this,a,agrhov_fluid, aw_fluid, adwdloga_fluid)
     class(TEarlyQuintessence) :: this
     !Do interpolation for background phi and phidot at a (precomputed in Init)
-    real(dl) a, agrhov_fluid, aw_fluid
+    real(dl) a, agrhov_fluid, aw_fluid, adwdloga_fluid
     real(dl) a0,b0,ho2o6,delta,da
     integer ix
 
     if (a >= 0.999d0) then
         agrhov_fluid = this%grhov_fluid(this%npoints_fluid)
         aw_fluid = this%w_fluid(this%npoints_fluid)
+        adwdloga_fluid = this%dwdloga_fluid(this%npoints_fluid)
         return
     endif
 
@@ -413,6 +415,7 @@
     ho2o6 = da**2/6._dl
     agrhov_fluid=b0*this%grhov_fluid(ix+1) + a0*(this%grhov_fluid(ix)-b0*((a0+1)*this%ddgrhov_fluid(ix)+(2-a0)*this%ddgrhov_fluid(ix+1))*ho2o6)
     aw_fluid=b0*this%w_fluid(ix+1) + a0*(this%w_fluid(ix)-b0*((a0+1)*this%ddw_fluid(ix)+(2-a0)*this%ddw_fluid(ix+1))*ho2o6)
+    adwdloga_fluid=b0*this%dwdloga_fluid(ix+1) + a0*(this%dwdloga_fluid(ix)-b0*((a0+1)*this%dddwdloga_fluid(ix)+(2-a0)*this%dddwdloga_fluid(ix+1))*ho2o6)
 
     end subroutine FluidValsAta
 
@@ -425,19 +428,17 @@
     real(dl), intent(in) :: ay(*)
     real(dl), intent(inout) :: ayprime(*)
     integer, intent(in) :: w_ix
-    real(dl) phi, phidot, delta_phi, delta_phidot, w_eff
+    real(dl) phi, phidot, delta_phi, delta_phidot, grhov_fluid, w_fluid, dwdloga_fluid
 
     delta_phi=ay(w_ix)
     delta_phidot=ay(w_ix+1)
 
-    if (this%use_fluid_approximation) then
+    if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
 
-        !call this%ValsAta(a,phi,phidot)
-        !dgrhoe= phidot*delta_phidot + delta_phi*a**2*this%Vofphi(phi,1)
-        !dgqe= k*phidot*delta_phi
+        call this%FluidValsAta(a, grhov_fluid, w_fluid, dwdloga_fluid)
 
-        dgrhoe = ay(w_ix+2)*grhov_t
-        dgqe= ay(w_ix+3)*grhov_t
+        dgrhoe = ay(w_ix+2)*grhov_fluid
+        dgqe= ay(w_ix+3)*grhov_fluid
 
     else
 
@@ -456,7 +457,8 @@
     real(dl), intent(inout) :: ayprime(:)
     real(dl), intent(in) :: a, adotoa, w, k, z, y(:)
     integer, intent(in) :: w_ix
-    real(dl) clxq, uq, phi, phidot, cs2_eff, w_eff, Hv3_over_k, delta_phi, delta_phidot, phidotdot, grhov_t, V, Vprime, Vprimeprime, a2 
+    real(dl) clxq, uq, phi, phidot, cs2_fluid, Hv3_over_k, delta_phi, delta_phidot, phidotdot, grhov_t, V, Vprime, Vprimeprime, a2, grhov_fluid, w_fluid, dwdloga_fluid, mtilde, deriv 
+    real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc s
 
     delta_phi=y(w_ix)
     delta_phidot=y(w_ix+1)
@@ -473,30 +475,37 @@
     end if
 
     a2 = a**2
-    V = this%Vofphi(phi,0) 
-    Vprime = this%Vofphi(phi,1) 
-    Vprimeprime = this%Vofphi(phi,2) 
-    phidotdot = - 2 * adotoa * phidot - a2*Vprime
-    grhov_t = phidot**2/2 + a2*V
-
+    
     clxq=y(w_ix+2)
     ! Heat flux u = (1+w)v
     uq=y(w_ix+3)
 
     if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
 
-        ! FIXME AND CHECK EQUATIONS
-        cs2_eff = 0._dl
-        w_eff = (this%n - 1) / (this%n + 1)
+        call this%FluidValsAta(a, grhov_fluid, w_fluid, dwdloga_fluid)
+
+        ! (19, 20) in https://arxiv.org/pdf/1410.2896 but generalised to cs2 /= 1
+        ! ca2 = cs2 - 1/3 * deriv, where deriv =  dw/dlog a/(1+w)
+        deriv = dwdloga_fluid / (1 + w_fluid)
+        mtilde = units * this%m
+        cs2_fluid = k**2 / (k**2 + 4*mtilde**2*a2)
         Hv3_over_k =  3*adotoa*uq / k
 
-        ayprime(w_ix+2) = -  k * uq - (1 + w_eff) * k * z & 
-            -3 * adotoa * (cs2_eff - w_eff) *  (clxq + Hv3_over_k)
-            
-        ayprime(w_ix+3) = -adotoa * (1 - 3 * cs2_eff) * uq + &
-            k * cs2_eff * clxq 
+        !density perturbation
+        ayprime(w_ix+2) = -3 * adotoa * (cs2_fluid - w_fluid) *  (y(w_ix+2) + Hv3_over_k) &
+            -   k * y(w_ix + 3) - (1 + w_fluid) * k * z  - adotoa*deriv* Hv3_over_k
+        !(1+w)v
+        ayprime(w_ix + 3) = -adotoa * (1 - 3 * cs2_fluid -  deriv) * y(w_ix + 3) + &
+            k * cs2_fluid * y(w_ix+2)
 
     else
+
+        ! Quintessence component
+        V = this%Vofphi(phi,0, 1) 
+        Vprime = this%Vofphi(phi,1) 
+        Vprimeprime = this%Vofphi(phi,2) 
+        phidotdot = - 2 * adotoa * phidot - a2*Vprime
+        grhov_t = phidot**2/2 + a2*V
 
         ayprime(w_ix+2) = (phidotdot * delta_phidot + phidot * ayprime(w_ix+1) + delta_phidot * a2 * Vprime + & 
         2 * delta_phi * adotoa * a2 * Vprime + delta_phi * a2 * Vprimeprime * phidot) / grhov_t - & 
@@ -863,10 +872,11 @@
     this%npoints_fluid = 10000
 
     if (allocated(this%sampled_a_fluid)) then
-        deallocate(this%sampled_a_fluid, this%grhov_fluid, this%ddgrhov_fluid, this%w_fluid, this%ddw_fluid)
+        deallocate(this%sampled_a_fluid, this%grhov_fluid, this%ddgrhov_fluid, this%w_fluid, this%ddw_fluid, this%dwdloga_fluid, this%dddwdloga_fluid)
     end if
 
-    allocate(this%sampled_a_fluid(this%npoints_fluid), this%grhov_fluid(this%npoints_fluid), this%ddgrhov_fluid(this%npoints_fluid), this%w_fluid(this%npoints_fluid), this%ddw_fluid(this%npoints_fluid))
+    allocate(this%sampled_a_fluid(this%npoints_fluid), this%grhov_fluid(this%npoints_fluid), this%ddgrhov_fluid(this%npoints_fluid))
+    allocate(this%w_fluid(this%npoints_fluid), this%ddw_fluid(this%npoints_fluid), this%dwdloga_fluid(this%npoints_fluid), this%dddwdloga_fluid(this%npoints_fluid))
 
     this%dloga_fluid = -log(this%a_fluid_switch)/this%npoints_fluid
 
@@ -884,15 +894,23 @@
         ! Repeated here - couldn't return w from function
         a = exp(aend)
         a2=a**2
-        grhoa2 = this%state%grho_no_de(a) +  yf(1) * a2
+        grho_tot = this%state%grho_no_de(a) +  yf(1) * a2 + a2*this%Vofphi(0.0d0,0,2) ! CC so use any phi
         ! H in cosmological time 
-        H = sqrt(grhoa2/3.0d0) /a2
+        H = sqrt(grho_tot/3.0d0) /a2
+        dHdt =  - 0.5d0 * (grho_tot/3.0d0 + gpres_tot) / this%a_fluid_switch**4 - H**2
         if (this%n == 1 .and. this%use_PH) then
             this%w_fluid(i)  = 1.5d0 * (mtilde/H)**(-2)
         else
             this%w_fluid(i) = (this%n - 1.0d0) / (this%n + 1.0d0)
         end if
-        !write(*,*) this%sampled_a_fluid(i), this%grhov_fluid(i), this%w_fluid(i) 
+        gpres_tot = this%state%gpres_no_de(a) + this%w_fluid(i) * yf(1) * a2 - a2*this%Vofphi(0.0d0,0,2)
+        dHdt =  - 0.5d0 * (grho_tot/3.0d0 + gpres_tot) / a**4 - H**2
+        if (this%n == 1 .and. this%use_PH) then
+            this%dwdloga_fluid(i) = 3.0d0 * dHdt / mtilde**2
+        else
+            this%dwdloga_fluid(i) = 0.0d0
+        end if
+        !write(*,*) this%sampled_a_fluid(i), this%grhov_fluid(i), this%w_fluid(i), this%dwdloga_fluid(i)  
     end do
 
     call spline(this%sampled_a_fluid,this%grhov_fluid,this%npoints_fluid,splZero,splZero,this%ddgrhov_fluid)
