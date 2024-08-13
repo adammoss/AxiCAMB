@@ -308,7 +308,6 @@
     integer ind, i, ix
     real(dl), parameter :: splZero = 0._dl
     real(dl) lastsign, da_osc, last_a, a_c
-    integer :: oscillation_count
     real(dl) initial_phi, initial_phidot, a2
     real(dl), dimension(:), allocatable :: sampled_a, phi_a, phidot_a, fde
     integer npoints, tot_points, max_ix
@@ -466,25 +465,13 @@
         call EvolveBackgroundLog(this,NumEqs,aend,y,w(:,1))
         phi_a(ix)=y(1)
         phidot_a(ix)=y(2)/a2
-        !if (i==1) then
-        !    lastsign = y(2)
-        !elseif (y(2)*lastsign < 0) then
-        !    !derivative has changed sign. Use to probe any oscillation scale:
-        !    da_osc = min(da_osc, exp(aend) - last_a)
-        !    last_a = exp(aend)
-        !    lastsign= y(2)
-        !end if
-
-        ! Check for sign change in phidot (half-cycle of oscillation)
         if (i==1) then
-            lastsign = sign(1.0_dl, phidot_a(ix))
-            oscillation_count = 0
-        elseif (sign(1.0_dl, phidot_a(ix)) /= lastsign) then
-            oscillation_count = oscillation_count + 1
-            lastsign = sign(1.0_dl, phidot_a(ix))
-            ! Update da_osc
+            lastsign = y(2)
+        elseif (y(2)*lastsign < 0) then
+            !derivative has changed sign. Use to probe any oscillation scale:
             da_osc = min(da_osc, exp(aend) - last_a)
             last_a = exp(aend)
+            lastsign= y(2)
         end if
 
         !Define fde as ratio of early dark energy density to total
@@ -498,8 +485,6 @@
             exit
         end if
     end do
-
-    write(*, *) oscillation_count, this%max_a_log 
 
     ! Do remaining steps with linear spacing in a, trying to be small enough
     this%npoints_log = ix
@@ -531,12 +516,7 @@
         call EvolveBackground(this,NumEqs,aend,y,w(:,1))
         this%phi_a(ix)=y(1)
         this%phidot_a(ix)=y(2)/a2
-        ! Check for sign change in phidot (half-cycle of oscillation)
-        if (sign(1.0_dl, this%phidot_a(ix)) /= lastsign) then
-            oscillation_count = oscillation_count + 1
-            lastsign = sign(1.0_dl, this%phidot_a(ix))
-            write(*,*) aend, oscillation_count
-        end if
+
         this%fde(ix) = 1/((this%state%grho_no_de(aend) +  this%frac_lambda0*this%State%grhov*a2**2) &
             /(a2*(0.5d0* this%phidot_a(ix)**2 + a2*this%Vofphi(y(1),0))) + 1)
         if (max_ix==0 .and. this%fde(ix)< this%fde(ix-1)) then
