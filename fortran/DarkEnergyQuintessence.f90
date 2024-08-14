@@ -830,7 +830,7 @@
     end do
 
     if (this%DebugLevel > 0) then
-        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles at linear switch:', oscillation_count
+        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles at linear switch:', oscillation_count/2
     end if
 
     ! Do remaining steps with linear spacing in a, trying to be small enough
@@ -858,36 +858,45 @@
         aend = this%max_a_log + this%da*i
         a2 =aend**2
         this%sampled_a(ix)=aend
-        call dverk(this,NumEqs,EvolveBackground,afrom,y,aend,this%integrate_tol,ind,c,NumEqs,w)
-        if (.not. this%check_error(afrom, aend)) return
-        call EvolveBackground(this,NumEqs,aend,y,w(:,1))
-        this%phi_a(ix)=y(1)
-        this%phidot_a(ix)=y(2)/a2
-        ! Check for sign change in phidot (half-cycle of oscillation)
-        if (sign(1.0_dl, this%phidot_a(ix)) /= lastsign) then
-            oscillation_count = oscillation_count + 1
-            lastsign = sign(1.0_dl, this%phidot_a(ix))
-            if (.not. threshold_reached .and. oscillation_count / 2 >= this%oscillation_threshold) then
-                this%a_fluid_switch = this%sampled_a(ix)
-                threshold_reached = .true.
-                if (this%DebugLevel > 0) then
-                    write(*,*) 'Switching to fluid approximation at a =', this%a_fluid_switch
+
+        if (this%use_fluid_approximation .and. aend > this%a_fluid_switch) then
+
+            this%phi_a(ix) = 0.0_dl
+            this%phidot_a(ix)= 0.0_dl
+
+        else
+
+            call dverk(this,NumEqs,EvolveBackground,afrom,y,aend,this%integrate_tol,ind,c,NumEqs,w)
+            if (.not. this%check_error(afrom, aend)) return
+            call EvolveBackground(this,NumEqs,aend,y,w(:,1))
+            this%phi_a(ix)=y(1)
+            this%phidot_a(ix)=y(2)/a2
+            ! Check for sign change in phidot (half-cycle of oscillation)
+            if (sign(1.0_dl, this%phidot_a(ix)) /= lastsign) then
+                oscillation_count = oscillation_count + 1
+                lastsign = sign(1.0_dl, this%phidot_a(ix))
+                if (.not. threshold_reached .and. oscillation_count / 2 >= this%oscillation_threshold) then
+                    this%a_fluid_switch = this%sampled_a(ix)
+                    threshold_reached = .true.
+                    if (this%DebugLevel > 0) then
+                        write(*,*) 'Switching to fluid approximation at a =', this%a_fluid_switch
+                    end if
                 end if
             end if
-        end if
+
+        endif
+
         this%fde(ix) = 1/((this%state%grho_no_de(aend) +  this%frac_lambda0*this%State%grhov*a2**2) &
-            /(a2*(0.5d0* this%phidot_a(ix)**2 + a2*this%Vofphi(y(1),0))) + 1)
+            /(a2*(0.5d0* this%phidot_a(ix)**2 + a2*this%Vofphi(this%phi_a(ix),0))) + 1)
+
         if (max_ix==0 .and. this%fde(ix)< this%fde(ix-1)) then
             max_ix = ix-1
         end if
     end do
 
-    ! Calculate the number of full cycles
-    oscillation_count = oscillation_count / 2
-
     ! Print the result
     if (this%DebugLevel > 0) then
-        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles:', oscillation_count
+        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles:', oscillation_count/2
     end if
 
     call spline(this%sampled_a,this%phi_a,tot_points,splZero,splZero,this%ddphi_a)
