@@ -21,6 +21,8 @@
     procedure :: w_de
     procedure :: grho_de
     procedure :: Effective_w_wa !Used as approximate values for non-linear corrections
+    procedure :: has_switch
+    procedure :: Switch
     end type TDarkEnergyModel
 
     type, extends(TDarkEnergyModel) :: TDarkEnergyEqnOfState
@@ -44,6 +46,15 @@
 
     public TDarkEnergyModel, TDarkEnergyEqnOfState
     contains
+
+    function has_switch(this, a)
+    class(TDarkEnergyModel) :: this
+    logical has_switch
+    real(dl) a
+    
+    has_switch = .false.
+
+    end function has_switch
 
     function w_de(this, a)
     class(TDarkEnergyModel) :: this
@@ -69,6 +80,12 @@
 
     end subroutine PrintFeedback
 
+    subroutine Switch(this, w_ix, a, k, z, y)
+    class(TDarkEnergyModel), intent(inout) :: this
+    real(dl), intent(in) :: a, k, z
+    real(dl), intent(inout) :: y(:)    
+    integer, intent(in) :: w_ix
+    end subroutine Switch
 
     subroutine Init(this, State)
     use classes
