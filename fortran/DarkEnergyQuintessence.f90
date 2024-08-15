@@ -939,7 +939,7 @@
         gpres_fluid_switch = 0.5d0*phidot_switch**2 - this%a_fluid_switch**2*this%Vofphi(phi_switch,0,1)
     end if
 
-    this%npoints_fluid = 10000
+    this%npoints_fluid = 100000
 
     if (allocated(this%sampled_a_fluid)) then
         deallocate(this%sampled_a_fluid, this%grhov_fluid, this%ddgrhov_fluid, this%w_fluid, this%ddw_fluid, this%dwdloga_fluid, this%dddwdloga_fluid)
