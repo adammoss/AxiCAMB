@@ -838,6 +838,7 @@
     this%max_a_log = sampled_a(ix)
     this%da = min(this%max_a_log *(exp(this%dloga)-1), &
         da_osc/this%min_steps_per_osc, (1- this%max_a_log)/(this%npoints-this%npoints_log))
+    this%da = max(this%da, 1e-7)
     this%npoints_linear = int((1- this%max_a_log)/ this%da)+1
     this%da = (1- this%max_a_log)/this%npoints_linear
 
@@ -986,6 +987,10 @@
 
     call spline(this%sampled_a_fluid,this%grhov_fluid,this%npoints_fluid,splZero,splZero,this%ddgrhov_fluid)
     call spline(this%sampled_a_fluid,this%w_fluid,this%npoints_fluid,splZero,splZero,this%ddw_fluid)
+
+    if (this%DebugLevel>0) then
+        write(*,*) 'TEarlyQuintessence finished init'
+    end if
 
     end subroutine TEarlyQuintessence_Init
 
