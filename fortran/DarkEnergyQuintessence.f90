@@ -632,7 +632,7 @@
     Type(TTimer) :: Timer
     Type(TNEWUOA) :: Minimize
     real(dl) log_params(2), param_min(2), param_max(2)
-    real(dl) phi_switch, phidot_switch, grhov_fluid_switch, gpres_fluid_switch
+    real(dl) phi_switch, phidot_switch, grhov_fluid_switch, gpres_fluid_switch, grhov_scf, gpres_scf, phi_scf, phidot_scf, weighting  
     real(dl) :: mtilde, H, dHdt, grho_tot, gpres_tot, grhoa2
     real(dl) :: phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
@@ -812,7 +812,10 @@
                 this%a_fluid_switch = sampled_a(ix)
                 threshold_reached = .true.
                 if (this%DebugLevel > 0) then
-                    write(*,*) 'TEarlyQuintessence: Switching to fluid approximation at a =', this%a_fluid_switch
+                    write(*,*) 'Switching to fluid approximation at a, phi =', this%a_fluid_switch, phi_a(ix)
+                end if
+                if (FeedbackLevel > 0 .and. cos(phi_a(ix)/this%f) < 0.9_dl) then
+                    write(*,*) 'PH not a good approximation for this phi_initial'
                 end if
             end if
         end if
@@ -860,7 +863,7 @@
         a2 =aend**2
         this%sampled_a(ix)=aend
 
-        if (this%use_fluid_approximation .and. aend > this%a_fluid_switch) then
+        if (this%use_fluid_approximation .and. aend > 3 * this%a_fluid_switch) then
 
             this%phi_a(ix) = 0.0_dl
             this%phidot_a(ix)= 0.0_dl
@@ -880,7 +883,10 @@
                     this%a_fluid_switch = this%sampled_a(ix)
                     threshold_reached = .true.
                     if (this%DebugLevel > 0) then
-                        write(*,*) 'Switching to fluid approximation at a =', this%a_fluid_switch
+                        write(*,*) 'Switching to fluid approximation at a, phi =', this%a_fluid_switch, this%phi_a(ix)
+                    end if
+                    if (FeedbackLevel > 0 .and. cos(this%phi_a(ix)/this%f) < 0.9_dl) then
+                        write(*,*) 'PH not a good approximation for this phi_initial'
                     end if
                 end if
             end if
@@ -928,7 +934,7 @@
 
     ! Testing
     !if (this%oscillation_threshold < 10) then
-    !    this%a_fluid_switch = 5.0e-05
+    !    this%a_fluid_switch = 3.0e-05
     !end if
 
     if (this%n == 1 .and. this%use_PH) then
@@ -962,27 +968,30 @@
         call dverk(this,NumEqsFluid,EvolveBackgroundFluid,afrom,yf,aend,this%integrate_tol,ind,cf,NumEqsFluid,wf)
         if (.not. this%check_error(afrom, aend)) return
         call EvolveBackgroundFluid(this,NumEqsFluid,aend,yf,wf(:,1))
-        this%grhov_fluid(i) = yf(1)
+        weighting = exp(-10*this%dloga_fluid*i)
+        call this%ValsAta(this%sampled_a_fluid(i), phi_scf, phidot_scf)
+        grhov_scf = 0.5d0*phidot_scf**2 + this%sampled_a_fluid(i)**2*this%Vofphi(phi_scf,0,1)
+        gpres_scf = 0.5d0*phidot_scf**2 - this%sampled_a_fluid(i)**2*this%Vofphi(phi_scf,0,1)
+        ! Use a weighted combination to smoothly go from true to auxillary rho
+        this%grhov_fluid(i) = grhov_scf * weighting +  (1 - weighting) * yf(1)
         ! Repeated here - couldn't return w from function
         a = exp(aend)
         a2=a**2
-        grho_tot = this%state%grho_no_de(a) +  yf(1) * a2 + a2*this%Vofphi(0.0d0,0,2) ! CC so use any phi
+        grho_tot = this%state%grho_no_de(a) +  this%grhov_fluid(i) * a2 + a2*this%Vofphi(0.0d0,0,2) ! CC so use any phi
         ! H in cosmological time 
         H = sqrt(grho_tot/3.0d0) /a2
-        dHdt =  - 0.5d0 * (grho_tot/3.0d0 + gpres_tot) / this%a_fluid_switch**4 - H**2
         if (this%n == 1 .and. this%use_PH) then
             this%w_fluid(i)  = 1.5d0 * (mtilde/H)**(-2)
         else
             this%w_fluid(i) = (this%n - 1.0d0) / (this%n + 1.0d0)
         end if
-        gpres_tot = this%state%gpres_no_de(a) + this%w_fluid(i) * yf(1) * a2 - a2*this%Vofphi(0.0d0,0,2)
+        gpres_tot = this%state%gpres_no_de(a) + this%w_fluid(i) * this%grhov_fluid(i) * a2 - a2*this%Vofphi(0.0d0,0,2)
         dHdt =  - 0.5d0 * (grho_tot/3.0d0 + gpres_tot) / a**4 - H**2
         if (this%n == 1 .and. this%use_PH) then
             this%dwdloga_fluid(i) = 3.0d0 * dHdt / mtilde**2
         else
             this%dwdloga_fluid(i) = 0.0d0
         end if
-        !write(*,*) this%sampled_a_fluid(i), this%grhov_fluid(i), this%w_fluid(i), this%dwdloga_fluid(i)  
     end do
 
     call spline(this%sampled_a_fluid,this%grhov_fluid,this%npoints_fluid,splZero,splZero,this%ddgrhov_fluid)
