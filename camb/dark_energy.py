@@ -194,6 +194,7 @@ class EarlyQuintessence(Quintessence):
         ("f", c_double, r"f/Mpl (sqrt(8\piG)f); only used for initial search value when use_zc is True"),
         ("m", c_double, "mass parameter in reduced Planck mass units; "
                         "only used for initial search value when use_zc is True"),
+        ("potential_type", c_int, "0 for cosine potential, 1 for quadratic potential"),                
         ("theta_i", c_double, "phi/f initial field value"),
         ("frac_lambda0", c_double, "fraction of dark energy in cosmological constant today (approximated as 1)"),
         ("use_zc", c_bool, "solve for f, m to get specific critical redshift zc and fde_zc"),
@@ -218,11 +219,12 @@ class EarlyQuintessence(Quintessence):
     ]
     _fortran_class_name_ = 'TEarlyQuintessence'
 
-    def set_params(self, n, f=0.05, m=5e-54, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10, 
+    def set_params(self, n, f=0.05, m=5e-54, potential_type=0, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10, 
                    use_fluid_approximation=False, use_PH=False):
         self.n = n
         self.f = f
         self.m = m
+        self.potential_type = potential_type
         self.theta_i = theta_i
         self.use_zc = use_zc
         self.oscillation_threshold = oscillation_threshold

@@ -59,6 +59,7 @@
         real(dl) :: n = 3._dl
         real(dl) :: f =0.05 ! sqrt(8*pi*G)*f
         real(dl) :: m = 5d-54 !m in reduced Planck mass units
+        integer :: potential_type = 0
         real(dl) :: theta_i = 3.1_dl !initial value of phi/f
         real(dl) :: frac_lambda0 = 1._dl !fraction of dark energy density that is cosmological constant today
         logical :: use_zc = .true. !adjust m to fit zc
@@ -388,18 +389,34 @@
     VofPhi = 0.0_dl
 
     ! Calculate quintessence part if needed
-    if (calc_component /= 2) then
-        ! Assume f = sqrt(kappa)*f_theory = f_theory/M_pl
-        ! m = m_theory/M_Pl
-        theta = phi/this%f
-        if (deriv==0) then
-            Vofphi = VofPhi + units*this%m**2*this%f**2*(1 - cos(theta))**this%n + this%frac_lambda0*this%State%grhov
-        else if (deriv ==1) then
-            Vofphi = VofPhi + units*this%m**2*this%f*this%n*(1 - cos(theta))**(this%n-1)*sin(theta)
-        else if (deriv ==2) then
-            costheta = cos(theta)
-            Vofphi = VofPhi + units*this%m**2*this%n*(1 - costheta)**(this%n-1)*(this%n*(1+costheta) -1)
+    if (this%potential_type == 0) then
+
+        if (calc_component /= 2) then
+            ! Assume f = sqrt(kappa)*f_theory = f_theory/M_pl
+            ! m = m_theory/M_Pl
+            theta = phi/this%f
+            if (deriv==0) then
+                Vofphi = VofPhi + units*this%m**2*this%f**2*(1 - cos(theta))**this%n + this%frac_lambda0*this%State%grhov
+            else if (deriv ==1) then
+                Vofphi = VofPhi + units*this%m**2*this%f*this%n*(1 - cos(theta))**(this%n-1)*sin(theta)
+            else if (deriv ==2) then
+                costheta = cos(theta)
+                Vofphi = VofPhi + units*this%m**2*this%n*(1 - costheta)**(this%n-1)*(this%n*(1+costheta) -1)
+            end if
         end if
+
+    else if (this%potential_type == 1) then
+
+         if (calc_component /= 2) then
+            if (deriv==0) then
+                Vofphi = VofPhi + 0.5_dl * units*this%m**2*phi**2
+            else if (deriv ==1) then
+                Vofphi = VofPhi + units*this%m**2*phi
+            else if (deriv ==2) then
+                Vofphi = VofPhi + units*this%m**2
+            end if
+        end if
+
     end if
 
      ! Add LCDM component if needed
@@ -508,23 +525,21 @@
     real(dl), intent(in) :: ay(*)
     real(dl), intent(inout) :: ayprime(*)
     integer, intent(in) :: w_ix
-    real(dl) phi, phidot, delta_phi, delta_phidot, grhov_fluid, w_fluid, dwdloga_fluid
+    real(dl) phi, phidot, delta_phi, delta_phidot, grhov_fluid, w_fluid, dwdloga_fluid, weighting
 
     delta_phi=ay(w_ix)
     delta_phidot=ay(w_ix+1)
 
+    call this%ValsAta(a,phi,phidot)
+    dgrhoe = phidot*delta_phidot + delta_phi*a**2*this%Vofphi(phi,1)
+    dgqe = k*phidot*delta_phi
+
     if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
 
         call this%FluidValsAta(a, grhov_fluid, w_fluid, dwdloga_fluid)
-
-        dgrhoe = ay(w_ix+2)*grhov_fluid
-        dgqe= ay(w_ix+3)*grhov_fluid
-
-    else
-
-        call this%ValsAta(a,phi,phidot)
-        dgrhoe= phidot*delta_phidot + delta_phi*a**2*this%Vofphi(phi,1)
-        dgqe= k*phidot*delta_phi
+        weighting = exp(10*(-log(a) + log(this%a_fluid_switch)))
+        dgrhoe = weighting * dgrhoe + (1 - weighting) *  ay(w_ix+2)*grhov_fluid
+        dgqe= weighting * dgqe + (1 - weighting) * ay(w_ix+3)*grhov_fluid
 
     endif
 
@@ -545,7 +560,7 @@
 
     call this%ValsAta(a,phi,phidot) !wasting time calling this again..
 
-    if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
+    if (this%use_fluid_approximation .and. a > 3 * this%a_fluid_switch) then
         ! Set scalar field derivatives to zero
         ayprime(w_ix)= 0
         ayprime(w_ix+1) = 0
@@ -968,7 +983,7 @@
         call dverk(this,NumEqsFluid,EvolveBackgroundFluid,afrom,yf,aend,this%integrate_tol,ind,cf,NumEqsFluid,wf)
         if (.not. this%check_error(afrom, aend)) return
         call EvolveBackgroundFluid(this,NumEqsFluid,aend,yf,wf(:,1))
-        weighting = exp(-10*this%dloga_fluid*i)
+        weighting = exp(10*(-aend + log(this%a_fluid_switch)))
         call this%ValsAta(this%sampled_a_fluid(i), phi_scf, phidot_scf)
         grhov_scf = 0.5d0*phidot_scf**2 + this%sampled_a_fluid(i)**2*this%Vofphi(phi_scf,0,1)
         gpres_scf = 0.5d0*phidot_scf**2 - this%sampled_a_fluid(i)**2*this%Vofphi(phi_scf,0,1)
