@@ -219,7 +219,7 @@ class EarlyQuintessence(Quintessence):
     ]
     _fortran_class_name_ = 'TEarlyQuintessence'
 
-    def set_params(self, n, f=0.05, m=5e-54, potential_type=0, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10, 
+    def set_params(self, n=1, f=0.05, m=5e-54, potential_type=0, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10, 
                    use_fluid_approximation=False, use_PH=False):
         self.n = n
         self.f = f
