@@ -399,7 +399,7 @@
             ! m = m_theory/M_Pl
             theta = phi/this%f
             if (deriv==0) then
-                Vofphi = VofPhi + units*this%m**2*this%f**2*(1 - cos(theta))**this%n + this%frac_lambda0*this%State%grhov
+                Vofphi = VofPhi + units*this%m**2*this%f**2*(1 - cos(theta))**this%n
             else if (deriv ==1) then
                 Vofphi = VofPhi + units*this%m**2*this%f*this%n*(1 - cos(theta))**(this%n-1)*sin(theta)
             else if (deriv ==2) then
