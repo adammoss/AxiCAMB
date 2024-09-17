@@ -312,6 +312,7 @@
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
     real(dl) delphi, ddelphidt, dhsdt, delphic, delphis, ddelphicdt, ddelphisdt
     real(dl) dgrhoe, dgqe
+    real(dl) phi, phidot
     integer i
 
     if (this%n == 1 .and. this%use_PH) then
@@ -328,10 +329,12 @@
         ddelphisdt = -0.5*(2*delphi*k**4 + a**2*k**2*(2*D*ddelphidt + 6*ddelphidt*H + 4*delphi*mtilde**2 + dhsdt*(dphicdt + mtilde*phis)) + a**4*mtilde*(12*ddelphidt*H*mtilde - 6*D*delphi*H*mtilde + D*dhsdt*(dphisdt - mtilde*phic) + 2*dhsdt*mtilde*(dphicdt + mtilde*phis)))/(a**2*mtilde*(2*k**2 + a**2*(D**2 + 3*D*H + 4*mtilde**2)))
         dgrhoe= 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*ddelphisdt) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
         dgqe= 0.5d0 * k * a * (mtilde * (delphic*phis - delphis*phic) + delphic*dphicdt + delphis*dphisdt) 
+        call this%ValsAta(a,phi,phidot)
+        !write(*,*) a, phic, phis, delphic, delphis, dgrhoe / a2, (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1)) / a2, k * dgqe / a, k*k*phidot*y(w_ix) / a
         y(w_ix+2) = dgrhoe/grhov_fluid
         y(w_ix+3) = dgqe/grhov_fluid
     end if
-    
+
     end subroutine TEarlyQuintessence_Switch
 
 
@@ -829,7 +832,7 @@
                 if (this%DebugLevel > 0) then
                     write(*,*) 'Switching to fluid approximation at a, phi =', this%a_fluid_switch, phi_a(ix)
                 end if
-                if (FeedbackLevel > 0 .and. cos(phi_a(ix)/this%f) < 0.9_dl) then
+                if (FeedbackLevel > 0 .and. cos(phi_a(ix)/this%f) < 0.9_dl .and. this%potential_type == 0) then
                     write(*,*) 'PH not a good approximation for this phi_initial'
                 end if
             end if
@@ -900,7 +903,7 @@
                     if (this%DebugLevel > 0) then
                         write(*,*) 'Switching to fluid approximation at a, phi =', this%a_fluid_switch, this%phi_a(ix)
                     end if
-                    if (FeedbackLevel > 0 .and. cos(this%phi_a(ix)/this%f) < 0.9_dl) then
+                    if (FeedbackLevel > 0 .and. cos(this%phi_a(ix)/this%f) < 0.9_dl .and. this%potential_type == 0) then
                         write(*,*) 'PH not a good approximation for this phi_initial'
                     end if
                 end if
@@ -948,9 +951,9 @@
     ! Passaglia and Hu 
 
     ! Testing
-    !if (this%oscillation_threshold < 10) then
-    !    this%a_fluid_switch = 3.0e-05
-    !end if
+    if (this%oscillation_threshold < 10) then
+        this%a_fluid_switch = 6.8e-05
+    end if
 
     if (this%n == 1 .and. this%use_PH) then
         call this%calc_auxillary(this%a_fluid_switch, grhov_fluid_switch, gpres_fluid_switch, phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch)

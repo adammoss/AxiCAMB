@@ -221,8 +221,13 @@ class EarlyQuintessence(Quintessence):
 
     def set_params(self, n=1, f=0.05, m=5e-54, potential_type=0, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10, 
                    use_fluid_approximation=False, use_PH=False):
+        assert potential_type in [0, 1]
         self.n = n
-        self.f = f
+        if potential_type == 1:
+            # theta_i = phi_i for quadratic potential
+            self.f = 1
+        else:
+            self.f = f
         self.m = m
         self.potential_type = potential_type
         self.theta_i = theta_i
