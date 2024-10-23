@@ -951,9 +951,9 @@
     ! Passaglia and Hu 
 
     ! Testing
-    if (this%oscillation_threshold < 10) then
-        this%a_fluid_switch = 6.8e-05
-    end if
+    !if (this%oscillation_threshold < 10) then
+    !    this%a_fluid_switch = 6.8e-05
+    !end if
 
     if (this%n == 1 .and. this%use_PH) then
         call this%calc_auxillary(this%a_fluid_switch, grhov_fluid_switch, gpres_fluid_switch, phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch)
