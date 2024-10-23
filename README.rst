@@ -1,3 +1,7 @@
+This is a modified version of CAMB that implements the `Passaglia and Hu method <https://arxiv.org/abs/2201.10238>`_ for ultra-light axions. 
+
+A `demo script <https://colab.research.google.com/drive/1OW7eIB4xhdNILSItvTbDnW2yQceQbjoH?usp=sharing>`_ shows the main features compared to previous fluid based approaches.
+
 ===================
 CAMB
 ===================
