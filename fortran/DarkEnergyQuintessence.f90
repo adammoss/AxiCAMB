@@ -583,7 +583,7 @@
         call this%FluidValsAta(a, grhov_fluid, w_fluid, dwdloga_fluid)
 
         ! (19, 20) in https://arxiv.org/pdf/1410.2896 but generalised to cs2 /= 1
-        ! ca2 = cs2 - 1/3 * deriv, where deriv =  dw/dlog a/(1+w)
+        ! ca2 = w - 1/3 * deriv, where deriv =  dw/dlog a/(1+w)
         deriv = dwdloga_fluid / (1 + w_fluid)
         mtilde = units * this%m
         if (this%n == 1) then
