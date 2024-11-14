@@ -322,7 +322,7 @@
         delphi=y(w_ix)
         ddelphidt=y(w_ix+1) / a
         dhsdt = 2 * k * z / a
-        call this%calc_auxillary(a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H)
+        call this%calc_auxillary(a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H, .true.)
         delphic = delphi
         delphis = (2*delphi*(D + 3*H)*k**2 + a**2*(2*D**2*ddelphidt + 12*D*ddelphidt*H + 18*ddelphidt*H**2 + 4*(2*ddelphidt + 3*delphi*H)*mtilde**2 + 2*dhsdt*mtilde*(-dphisdt + mtilde*phic) + D*dhsdt*(dphicdt + mtilde*phis) + 3*dhsdt*H*(dphicdt + mtilde*phis)))/(2.*mtilde*(2*k**2 + a**2*(D**2 + 3*D*H + 4*mtilde**2))) 
         ddelphicdt = (2*(2*ddelphidt - delphi*(D + 3*H))*k**2 - a**2*(6*D*ddelphidt*H + 3*dhsdt*dphicdt*H + 6*H*(3*ddelphidt*H + 2*delphi*mtilde**2) + dhsdt*mtilde*(-2*dphisdt + 2*mtilde*phic + 3*H*phis) + D*dhsdt*(dphicdt + mtilde*phis)))/(4*k**2 + 2*a**2*(D**2 + 3*D*H + 4*mtilde**2)) 
@@ -330,7 +330,9 @@
         dgrhoe= 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*ddelphisdt) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
         dgqe= 0.5d0 * k * a * (mtilde * (delphic*phis - delphis*phic) + delphic*dphicdt + delphis*dphisdt) 
         call this%ValsAta(a,phi,phidot)
-        !write(*,*) a, phic, phis, delphic, delphis, dgrhoe / a2, (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1)) / a2, k * dgqe / a, k*k*phidot*y(w_ix) / a
+        write(*,*) a, delphi, delphic, delphis
+        write(*,*) dgrhoe / a2, (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1)) / a2, dgrhoe / grhov_fluid, (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1)) / grhov_fluid
+        write(*,*) k * dgqe / a, k*k*phidot*y(w_ix) / a
         y(w_ix+2) = dgrhoe/grhov_fluid
         y(w_ix+3) = dgqe/grhov_fluid
     end if
@@ -338,14 +340,18 @@
     end subroutine TEarlyQuintessence_Switch
 
 
-    subroutine calc_auxillary(this, a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H)
+    subroutine calc_auxillary(this, a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H, debug)
     class(TEarlyQuintessence), intent(inout) :: this
     real(dl), intent(in) :: a
     real(dl), intent(out) :: grhov_fluid, gpres_fluid, phic, phis, dphicdt, dphisdt, D, H
+    logical, intent(in), optional :: debug
     real(dl) phi, phidot
     real(dl) :: mtilde, dHdt, dphidt, afluid, grho_tot, gpres_tot, a2
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
     integer i
+    logical :: should_debug
+    should_debug = .false.
+    if (present(debug)) should_debug = debug
     call this%ValsAta(a, phi, phidot)
     a2 = a**2
     grhov_fluid = 0.5d0*phidot**2 + a2*this%Vofphi(phi,0,1)
@@ -364,7 +370,16 @@
         dphisdt = (3*H*mtilde*(-2*dphidt+D*phi))/(D**2+3*D*H+4*mtilde**2)
         dphicdt = (-3*H*(D*dphidt+3*dphidt*H+2*mtilde**2*phi))/(D**2+3*D*H+4*mtilde**2)
         grhov_fluid = 0.5d0 * a2*(0.5d0 * (dphisdt**2 + dphicdt**2) + mtilde * (-phic * dphisdt + phis*dphicdt) + mtilde**2 * (phic**2 + phis**2)) 
-        gpres_fluid = 0.5d0 * a2*(0.5d0 * (dphisdt**2 + dphicdt**2) + mtilde * (-phic * dphisdt + phis*dphicdt)) 
+        gpres_fluid = 0.5d0 * a2*(0.5d0 * (dphisdt**2 + dphicdt**2) + mtilde * (-phic * dphisdt + phis*dphicdt))
+        if (should_debug) then
+            print *, "Iteration ", i, ":"
+            print *, "a = ", a
+            print *, "H = ", H
+            print *, "phi = ", phi
+            print *, "phis = ", phis
+            print *, "phic = ", phic
+            print *, "--------------------"
+        end if 
     end do
     end subroutine calc_auxillary
 
