@@ -330,9 +330,24 @@
         dgrhoe= 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*ddelphisdt) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
         dgqe= 0.5d0 * k * a * (mtilde * (delphic*phis - delphis*phic) + delphic*dphicdt + delphis*dphisdt) 
         call this%ValsAta(a,phi,phidot)
-        write(*,*) a, delphi, delphic, delphis
-        write(*,*) dgrhoe / a2, (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1)) / a2, dgrhoe / grhov_fluid, (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1)) / grhov_fluid
-        write(*,*) k * dgqe / a, k*k*phidot*y(w_ix) / a
+        write(*,'(A,E15.6,A,E15.6,A,E15.6,A,E15.6)') &
+            'Scale factor (a): ', a, &
+            ' | Delta phi: ', delphi, &
+            ' | Delta phi_c: ', delphic, &
+            ' | Delta phi_s: ', delphis
+
+        write(*,'(A)') 'Energy density perturbations and related quantities:'
+        write(*,'(A,E15.6,A,E15.6)') &
+            '  dgrhoe/a^2 PH: ', dgrhoe/a2, &
+            ' | dgrhoe/a^2 original: ', (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1))/a2
+
+        write(*,'(A,E15.6,A,E15.6)') &
+            '  Fractional dgrhoe PH: ', dgrhoe/grhov_fluid, &
+            ' | Fractional dgrhoe original: ', (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1))/grhov_fluid
+
+        write(*,'(A,E15.6,A,E15.6)') &
+            '  k*dgqe/a: ', k*dgqe/a, &
+            ' | k^2*phidot*y(w_ix)/a: ', k*k*phidot*y(w_ix)/a
         y(w_ix+2) = dgrhoe/grhov_fluid
         y(w_ix+3) = dgqe/grhov_fluid
     end if
