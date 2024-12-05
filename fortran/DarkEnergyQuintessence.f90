@@ -308,12 +308,14 @@
     real(dl), intent(inout) :: y(:)    
     integer, intent(in) :: w_ix
     real(dl) grhov_fluid, gpres_fluid
-    real(dl) :: mtilde, H, phic, phis, dphicdt, dphisdt, afluid, D, a2
+    real(dl) :: mtilde, H, phic, phis, dphicdt, dphisdt, afluid, D, a2, dHdt
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
     real(dl) delphi, ddelphidt, dhsdt, delphic, delphis, ddelphicdt, ddelphisdt
     real(dl) dgrhoe, dgqe
     real(dl) phi, phidot
     integer i
+    real(dl) :: H_prime, m, phi_fluid, phi_prime_fluid, phi_s, phi_c_p, phi_s_p, fac, phi_c
+    real(dl) :: delta_phi_c_p, delta_phi_s_p, delta_phi_c, delta_phi_s, delta_phi_fluid, hL_prime, delta_phi_prime_fluid
 
     if (this%n == 1 .and. this%use_PH) then
         a2 = a**2
@@ -322,19 +324,76 @@
         delphi=y(w_ix)
         ddelphidt=y(w_ix+1) / a
         dhsdt = 2 * k * z / a
-        call this%calc_auxillary(a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H, .true.)
+        call this%calc_auxillary(a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H, dHDt, .true.)
         delphic = delphi
         delphis = (2*delphi*(D + 3*H)*k**2 + a**2*(2*D**2*ddelphidt + 12*D*ddelphidt*H + 18*ddelphidt*H**2 + 4*(2*ddelphidt + 3*delphi*H)*mtilde**2 + 2*dhsdt*mtilde*(-dphisdt + mtilde*phic) + D*dhsdt*(dphicdt + mtilde*phis) + 3*dhsdt*H*(dphicdt + mtilde*phis)))/(2.*mtilde*(2*k**2 + a**2*(D**2 + 3*D*H + 4*mtilde**2))) 
         ddelphicdt = (2*(2*ddelphidt - delphi*(D + 3*H))*k**2 - a**2*(6*D*ddelphidt*H + 3*dhsdt*dphicdt*H + 6*H*(3*ddelphidt*H + 2*delphi*mtilde**2) + dhsdt*mtilde*(-2*dphisdt + 2*mtilde*phic + 3*H*phis) + D*dhsdt*(dphicdt + mtilde*phis)))/(4*k**2 + 2*a**2*(D**2 + 3*D*H + 4*mtilde**2)) 
         ddelphisdt = -0.5*(2*delphi*k**4 + a**2*k**2*(2*D*ddelphidt + 6*ddelphidt*H + 4*delphi*mtilde**2 + dhsdt*(dphicdt + mtilde*phis)) + a**4*mtilde*(12*ddelphidt*H*mtilde - 6*D*delphi*H*mtilde + D*dhsdt*(dphisdt - mtilde*phic) + 2*dhsdt*mtilde*(dphicdt + mtilde*phis)))/(a**2*mtilde*(2*k**2 + a**2*(D**2 + 3*D*H + 4*mtilde**2)))
-        dgrhoe= 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*ddelphisdt) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
-        dgqe= 0.5d0 * k * a * (mtilde * (delphic*phis - delphis*phic) + delphic*dphicdt + delphis*dphisdt) 
+       
         call this%ValsAta(a,phi,phidot)
-        write(*,'(A,E15.6,A,E15.6,A,E15.6,A,E15.6)') &
-            'Scale factor (a): ', a, &
-            ' | Delta phi: ', delphi, &
-            ' | Delta phi_c: ', delphic, &
-            ' | Delta phi_s: ', delphis
+
+        ! AxiClass like equations
+        m = mtilde
+        H_prime = dHdt * a
+        phi_fluid = phi
+        phi_prime_fluid = phidot 
+        fac = 6.0d0 * H**2 / (9.0d0 * H**4 - 4.0d0 * (4.0d0 * H**2 * m**2 + H_prime**2 / a**2))
+        phi_c_p = fac * (4.0d0 * H * m * phi_fluid + 3.0d0 * H**2 * phi_prime_fluid / a / m + &
+                2.0d0 * H_prime * phi_prime_fluid / a**2 / m)
+        phi_s_p = fac * (3.0d0 * H**2 * phi_fluid - 2.0d0 * H_prime / a * phi_fluid + &
+                4.0d0 * H * phi_prime_fluid / a)
+        phi_s = phi_prime_fluid / a / m - phi_c_p
+        phi_c = phi
+        hL_prime = dhsdt * a
+        delta_phi_fluid = delphi
+        delta_phi_prime_fluid = ddelphidt * a
+        delta_phi_c_p = H / (-8.0d0 * (H * k)**2 * m + a * a * m * (9.0d0 * H**4 - &
+                        4.0d0 * (4.0d0 * (H * m)**2 + (H_prime / a)**2))) * &
+                        (2.0d0 * k * k * (3.0d0 * H * H * delta_phi_fluid + &
+                        2.0d0 * H_prime / a * delta_phi_fluid - 4.0d0 * H * delta_phi_prime_fluid / a) + &
+                        a * a * m * (2.0d0 * hL_prime / a * H_prime / a * (phi_c_p + phi_s) + &
+                        3.0d0 * H * H * m * (hL_prime / a / m * (phi_c_p + phi_s) + 8.0d0 * delta_phi_fluid) + &
+                        18.0d0 * H**3 * delta_phi_prime_fluid / a / m + &
+                        4.0d0 * H * m * (hL_prime / a * (phi_c - phi_s_p) + &
+                        3.0d0 * H_prime / a / m * delta_phi_prime_fluid / a / m)))
+        delta_phi_fluid = 2.2e-5
+        delta_phi_s_p = -H / a**2 / m / (-8.0d0 * (H * k)**2 * m + a * a * m * &
+                        (9.0d0 * H**4 - 4.0d0 * (4.0d0 * (H * m)**2 + (H_prime / a)**2))) * &
+                        (-4.0d0 * H * k**4 * delta_phi_fluid - &
+                        2.0d0 * (a * k)**2 * m * (H * m * (hL_prime / a / m * (phi_c_p + phi_s) + &
+                        4.0d0 * delta_phi_fluid) + 3.0d0 * H**2 * delta_phi_prime_fluid / a / m + &
+                        2.0d0 * H_prime / a * delta_phi_prime_fluid / a / m) - &
+                        (a * a * m)**2 * (2.0d0 * hL_prime / a * H_prime / a * (-phi_c + phi_s_p) + &
+                        18.0d0 * H**3 * delta_phi_fluid + &
+                        4.0d0 * H * m * (hL_prime / a * (phi_c_p + phi_s) - &
+                        3.0d0 * H_prime / a / m * delta_phi_fluid) + &
+                        3.0d0 * H * H * m * (hL_prime / a / m * phi_c - &
+                        hL_prime / a / m * phi_s_p + 8.0d0 * delta_phi_prime_fluid / a / m)))
+        delta_phi_c = delta_phi_fluid
+        delta_phi_s = delta_phi_prime_fluid / a / m - delta_phi_c_p
+
+        !dgrhoe= 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*ddelphisdt) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
+        dgrhoe= 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*delta_phi_s_p*mtilde) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
+        dgqe= 0.5d0 * k * a * (mtilde * (delphic*phis - delphis*phic) + delphic*dphicdt + delphis*dphisdt) 
+
+        print *, "k = ", k
+        print *, "a = ", a
+        print *, "m = ", m
+        print *, "H = ", H
+        print *, "H_prime = ", H_prime
+        print *, "hL_prime = ", hL_prime
+        print *, "phi = ", phi
+        print *, "phi_prime = ", phidot
+        print *, "phic = ", phic, phi_c
+        print *, "phis = ", phis, phi_s
+        print *, "phis_prime = ", dphisdt*a, phi_s_p*a*m 
+        print *, "phic_prime = ", dphicdt*a, phi_c_p*a*m
+        print *, "delta_phi = ", delphi
+        print *, "delta_phi_prime = ", ddelphidt*a
+        print *, "delta_phi_c = ", delphic, delta_phi_c
+        print *, "delta_phi_s = ", delphis, delta_phi_s 
+        print *, "delta_phi_c_prime = ", ddelphicdt*a, delta_phi_c_p*a*m
+        print *, "delta_phi_s_prime = ", ddelphisdt*a, delta_phi_s_p*a*m
 
         write(*,'(A)') 'Energy density perturbations and related quantities:'
         write(*,'(A,E15.6,A,E15.6)') &
@@ -345,9 +404,6 @@
             '  Fractional dgrhoe PH: ', dgrhoe/grhov_fluid, &
             ' | Fractional dgrhoe original: ', (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1))/grhov_fluid
 
-        write(*,'(A,E15.6,A,E15.6)') &
-            '  k*dgqe/a: ', k*dgqe/a, &
-            ' | k^2*phidot*y(w_ix)/a: ', k*k*phidot*y(w_ix)/a
         y(w_ix+2) = dgrhoe/grhov_fluid
         y(w_ix+3) = dgqe/grhov_fluid
     end if
@@ -355,14 +411,15 @@
     end subroutine TEarlyQuintessence_Switch
 
 
-    subroutine calc_auxillary(this, a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H, debug)
+    subroutine calc_auxillary(this, a, grhov_fluid, gpres_fluid, phic, phis, dphisdt, dphicdt, D, H, dHdt, debug)
     class(TEarlyQuintessence), intent(inout) :: this
     real(dl), intent(in) :: a
-    real(dl), intent(out) :: grhov_fluid, gpres_fluid, phic, phis, dphicdt, dphisdt, D, H
+    real(dl), intent(out) :: grhov_fluid, gpres_fluid, phic, phis, dphicdt, dphisdt, D, H, dHdt
     logical, intent(in), optional :: debug
     real(dl) phi, phidot
-    real(dl) :: mtilde, dHdt, dphidt, afluid, grho_tot, gpres_tot, a2
+    real(dl) :: mtilde, dphidt, afluid, grho_tot, gpres_tot, a2
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
+    real(dl) :: H_prime, m, phi_fluid, phi_prime_fluid, phi_s, phi_c_p, phi_s_p, fac
     integer i
     logical :: should_debug
     should_debug = .false.
@@ -384,6 +441,19 @@
         phis = (dphidt*((D+3*H)**2+4*mtilde**2)+6*H*mtilde**2*phi)/(D*(D+3*H)*mtilde+4*mtilde**3)
         dphisdt = (3*H*mtilde*(-2*dphidt+D*phi))/(D**2+3*D*H+4*mtilde**2)
         dphicdt = (-3*H*(D*dphidt+3*dphidt*H+2*mtilde**2*phi))/(D**2+3*D*H+4*mtilde**2)
+
+        ! AxiClass like equations
+        m = mtilde
+        H_prime = dHdt * a
+        phi_fluid = phi
+        phi_prime_fluid = phidot 
+        fac = 6.0d0 * H**2 / (9.0d0 * H**4 - 4.0d0 * (4.0d0 * H**2 * m**2 + H_prime**2 / a**2))
+        phi_c_p = fac * (4.0d0 * H * m * phi_fluid + 3.0d0 * H**2 * phi_prime_fluid / a / m + &
+                2.0d0 * H_prime * phi_prime_fluid / a**2 / m)
+        phi_s_p = fac * (3.0d0 * H**2 * phi_fluid - 2.0d0 * H_prime / a * phi_fluid + &
+                4.0d0 * H * phi_prime_fluid / a)
+        phi_s = phi_prime_fluid / a / m - phi_c_p
+
         grhov_fluid = 0.5d0 * a2*(0.5d0 * (dphisdt**2 + dphicdt**2) + mtilde * (-phic * dphisdt + phis*dphicdt) + mtilde**2 * (phic**2 + phis**2)) 
         gpres_fluid = 0.5d0 * a2*(0.5d0 * (dphisdt**2 + dphicdt**2) + mtilde * (-phic * dphisdt + phis*dphicdt))
         if (should_debug) then
@@ -391,8 +461,10 @@
             print *, "a = ", a
             print *, "H = ", H
             print *, "phi = ", phi
-            print *, "phis = ", phis
+            print *, "phis = ", phis, phi_s, fac
             print *, "phic = ", phic
+            print *, "phis_prime = ", dphisdt*a, phi_s_p*a*m 
+            print *, "phic_prime = ", dphicdt*a, phi_c_p*a*m 
             print *, "--------------------"
         end if 
     end do
@@ -682,7 +754,7 @@
     real(dl) log_params(2), param_min(2), param_max(2)
     real(dl) phi_switch, phidot_switch, grhov_fluid_switch, gpres_fluid_switch, grhov_scf, gpres_scf, phi_scf, phidot_scf, weighting  
     real(dl) :: mtilde, H, dHdt, grho_tot, gpres_tot, grhoa2
-    real(dl) :: phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch
+    real(dl) :: phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch, dHdt_switch
     real(dl), parameter :: units = MPC_in_sec /Tpl  !convert to units of 1/Mpc
 
     !Make interpolation table, etc,
@@ -981,12 +1053,13 @@
     ! Passaglia and Hu 
 
     ! Testing
-    !if (this%oscillation_threshold < 10) then
-    !    this%a_fluid_switch = 6.8e-05
-    !end if
+    if (this%oscillation_threshold < 10) then
+        this%a_fluid_switch = 2.2296e-03
+        !this%a_fluid_switch = 7.27e-04
+    end if
 
     if (this%n == 1 .and. this%use_PH) then
-        call this%calc_auxillary(this%a_fluid_switch, grhov_fluid_switch, gpres_fluid_switch, phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch)
+        call this%calc_auxillary(this%a_fluid_switch, grhov_fluid_switch, gpres_fluid_switch, phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch, dHdt_switch)
     else
         call this%ValsAta(this%a_fluid_switch, phi_switch, phidot_switch)
         grhov_fluid_switch = 0.5d0*phidot_switch**2 + this%a_fluid_switch**2*this%Vofphi(phi_switch,0,1)
