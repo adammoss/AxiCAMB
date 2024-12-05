@@ -32,7 +32,9 @@ Transfer_Weyl = 10
 Transfer_Newt_vel_cdm = 11
 Transfer_Newt_vel_baryon = 12
 Transfer_vel_baryon_cdm = 13
-Transfer_max = Transfer_vel_baryon_cdm
+Transfer_de = 14
+Transfer_de_prime = 15
+Transfer_max = Transfer_de_prime
 
 # for 21cm case
 Transfer_monopole = 4
@@ -49,7 +51,8 @@ derived_names = ['age', 'zstar', 'rstar', 'thetastar', 'DAstar', 'zdrag',
                  'rdrag', 'kd', 'thetad', 'zeq', 'keq', 'thetaeq', 'thetarseq']
 
 transfer_names = ['k/h', 'delta_cdm', 'delta_baryon', 'delta_photon', 'delta_neutrino', 'delta_nu', 'delta_tot',
-                  'delta_nonu', 'delta_tot_de', 'Weyl', 'v_newtonian_cdm', 'v_newtonian_baryon', 'v_baryon_cdm']
+                  'delta_nonu', 'delta_tot_de', 'Weyl', 'v_newtonian_cdm', 'v_newtonian_baryon', 'v_baryon_cdm', 
+                  'de', 'de_prime']
 
 evolve_names = transfer_names + ['a', 'etak', 'H', 'growth', 'v_photon', 'pi_photon',
                                  'E_2', 'v_neutrino', 'T_source', 'E_source', 'lens_potential_source']

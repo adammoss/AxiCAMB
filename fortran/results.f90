@@ -3067,7 +3067,8 @@
         ! total perturbations with and without neutrinos, with neutrinos+dark energy in the numerator
         Transfer_Weyl = 10, & ! the Weyl potential, for lensing and ISW
         Transfer_Newt_vel_cdm=11, Transfer_Newt_vel_baryon=12,   & ! -k v_Newtonian/H
-        Transfer_vel_baryon_cdm = 13 !relative velocity of baryons and CDM
+        Transfer_vel_baryon_cdm = 13, & !relative velocity of baryons and CDM
+        Transfer_de = 14, Transfer_de_prime = 15
     !Sources
     !Alternatively for 21cm
     integer, parameter :: Transfer_monopole=4, Transfer_vnewt=5, Transfer_Tmat = 6
