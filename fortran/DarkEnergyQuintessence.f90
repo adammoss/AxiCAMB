@@ -65,15 +65,17 @@
         logical :: use_zc = .true. !adjust m to fit zc
         real(dl) :: zc, fde_zc !readshift for peak f_de and f_de at that redshift
         integer :: oscillation_threshold = 1
+        real(dl) :: mH = 0.0_dl
+        real(dl) :: weighting_factor = 10.0_dl
         logical :: use_fluid_approximation = .false. 
         logicAL :: use_PH = .false.
         integer :: npoints = 5000 !baseline number of log a steps; will be increased if needed when there are oscillations
         integer :: min_steps_per_osc = 10
+        real(dl) :: a_fluid_switch = 1._dl
         real(dl), dimension(:), allocatable :: fde, ddfde
         real(dl), dimension(:), allocatable :: sampled_a_fluid, grhov_fluid, ddgrhov_fluid, w_fluid, ddw_fluid, dwdloga_fluid, dddwdloga_fluid
         integer, private :: npoints_fluid
         real(dl), private :: dloga_fluid
-        real(dl), private :: a_fluid_switch = 1._dl
     contains
     procedure :: Vofphi => TEarlyQuintessence_VofPhi
     procedure :: BackgroundDensityAndPressure => TEarlyQuintessence_BackgroundDensityAndPressure
@@ -540,7 +542,7 @@
     if (this%use_fluid_approximation .and. a > this%a_fluid_switch) then
 
         call this%FluidValsAta(a, grhov_fluid, w_fluid, dwdloga_fluid)
-        weighting = exp(10*(-log(a) + log(this%a_fluid_switch)))
+        weighting = exp(this%weighting_factor*(-log(a) + log(this%a_fluid_switch)))
         dgrhoe = weighting * dgrhoe + (1 - weighting) *  ay(w_ix+2)*grhov_fluid
         dgqe= weighting * dgqe + (1 - weighting) * ay(w_ix+3)*grhov_fluid
 
@@ -661,8 +663,8 @@
 
     call this%TQuintessence%Init(State)
 
-    this%a_fluid_switch = 1._dl
     threshold_reached = .false.
+    mtilde = units * this%m
     ! Evolve both scalar field and fluid equations
     this%num_perturb_equations = 4
 
@@ -793,7 +795,12 @@
     sampled_a(1)=this%astart
     da_osc = 1
     last_a = this%astart
-    max_ix =0
+    max_ix = 0
+    oscillation_count = 0
+
+    if (this%DebugLevel > 0 .and. this%a_fluid_switch < 1.0_dl) then
+         write(*,*) 'Switching to fluid approximation at a =', this%a_fluid_switch
+    end if
 
     ind=1
     afrom=this%log_astart
@@ -807,6 +814,11 @@
         call EvolveBackgroundLog(this,NumEqs,aend,y,w(:,1))
         phi_a(ix)=y(1)
         phidot_a(ix)=y(2)/a2
+        grho_tot = this%state%grho_no_de(sampled_a(ix)) +  sampled_a(ix)**2*(0.5d0*phidot_a(ix)**2 + sampled_a(ix)**2*this%Vofphi(phi_a(ix),0,0))
+        ! H in cosmological time 
+        H = sqrt(grho_tot/3.0d0) /a2
+        !write(*,*) 'aend', sampled_a(ix), phi_a(ix), phidot_a(ix), oscillation_count, H, mtilde/H
+
         !if (i==1) then
         !    lastsign = y(2)
         !elseif (y(2)*lastsign < 0) then
@@ -826,15 +838,22 @@
             ! Update da_osc
             da_osc = min(da_osc, exp(aend) - last_a)
             last_a = exp(aend)
-            if (.not. threshold_reached .and. oscillation_count / 2 >= this%oscillation_threshold) then
+            if (.not. threshold_reached .and. this%a_fluid_switch == 1.0_dl .and. this%mH == 0.0_dl .and. oscillation_count >= this%oscillation_threshold) then
                 this%a_fluid_switch = sampled_a(ix)
                 threshold_reached = .true.
                 if (this%DebugLevel > 0) then
-                    write(*,*) 'Switching to fluid approximation at a, phi =', this%a_fluid_switch, phi_a(ix)
+                    write(*,*) 'Switching to fluid approximation at a, phi, mH =', this%a_fluid_switch, phi_a(ix), mtilde/H
                 end if
                 if (FeedbackLevel > 0 .and. cos(phi_a(ix)/this%f) < 0.9_dl .and. this%potential_type == 0) then
                     write(*,*) 'PH not a good approximation for this phi_initial'
                 end if
+            end if
+        end if
+        if (.not. threshold_reached .and. this%a_fluid_switch == 1.0_dl .and. this%mH > 0.0_dl .and. mtilde/H > this%mH) then
+            this%a_fluid_switch = sampled_a(ix)
+            threshold_reached = .true.
+            if (this%DebugLevel > 0) then
+                write(*,*) 'Switching to fluid approximation at a, phi, mH =', this%a_fluid_switch, phi_a(ix), mtilde/H
             end if
         end if
 
@@ -851,7 +870,7 @@
     end do
 
     if (this%DebugLevel > 0) then
-        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles at linear switch:', oscillation_count/2
+        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles at linear switch:', oscillation_count
     end if
 
     ! Do remaining steps with linear spacing in a, trying to be small enough
@@ -893,19 +912,30 @@
             call EvolveBackground(this,NumEqs,aend,y,w(:,1))
             this%phi_a(ix)=y(1)
             this%phidot_a(ix)=y(2)/a2
+            grho_tot = this%state%grho_no_de(this%sampled_a(ix)) +  this%sampled_a(ix)**2*(0.5d0*this%phidot_a(ix)**2 + this%sampled_a(ix)**2*this%Vofphi(this%phi_a(ix),0,0))
+            ! H in cosmological time 
+            H = sqrt(grho_tot/3.0d0) /a2
+            !write(*,*) 'aend', this%sampled_a(ix), this%phi_a(ix), this%phidot_a(ix), oscillation_count, H, mtilde/H, this%mH
             ! Check for sign change in phidot (half-cycle of oscillation)
             if (sign(1.0_dl, this%phidot_a(ix)) /= lastsign) then
                 oscillation_count = oscillation_count + 1
                 lastsign = sign(1.0_dl, this%phidot_a(ix))
-                if (.not. threshold_reached .and. oscillation_count / 2 >= this%oscillation_threshold) then
+                if (.not. threshold_reached .and. this%a_fluid_switch == 1.0_dl .and. this%mH == 0.0_dl .and. oscillation_count >= this%oscillation_threshold) then
                     this%a_fluid_switch = this%sampled_a(ix)
                     threshold_reached = .true.
                     if (this%DebugLevel > 0) then
-                        write(*,*) 'Switching to fluid approximation at a, phi =', this%a_fluid_switch, this%phi_a(ix)
+                        write(*,*) 'Switching to fluid approximation at a, phi, mH =', this%a_fluid_switch, this%phi_a(ix), mtilde/H
                     end if
                     if (FeedbackLevel > 0 .and. cos(this%phi_a(ix)/this%f) < 0.9_dl .and. this%potential_type == 0) then
                         write(*,*) 'PH not a good approximation for this phi_initial'
                     end if
+                end if
+            end if
+            if (.not. threshold_reached .and. this%a_fluid_switch == 1.0_dl .and. this%mH > 0.0_dl .and. mtilde/H > this%mH) then
+                this%a_fluid_switch = this%sampled_a(ix)
+                threshold_reached = .true.
+                if (this%DebugLevel > 0) then
+                    write(*,*) 'Switching to fluid approximation at a, phi, mH =', this%a_fluid_switch, this%phi_a(ix), mtilde/H
                 end if
             end if
 
@@ -921,8 +951,10 @@
 
     ! Print the result
     if (this%DebugLevel > 0) then
-        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles:', oscillation_count/2
+        write(*,*) 'TEarlyQuintessence: Number of oscillation cycles:', oscillation_count
     end if
+
+    this%state%a_fluid_switch = this%a_fluid_switch
 
     call spline(this%sampled_a,this%phi_a,tot_points,splZero,splZero,this%ddphi_a)
     call spline(this%sampled_a,this%phidot_a,tot_points,splZero,splZero,this%ddphidot_a)
@@ -950,11 +982,6 @@
 
     ! Passaglia and Hu 
 
-    ! Testing
-    !if (this%oscillation_threshold < 10) then
-    !    this%a_fluid_switch = 6.8e-05
-    !end if
-
     if (this%n == 1 .and. this%use_PH) then
         call this%calc_auxillary(this%a_fluid_switch, grhov_fluid_switch, gpres_fluid_switch, phic_switch, phis_switch, dphisdt_switch, dphicdt_switch, D_switch, H_switch)
     else
@@ -974,8 +1001,6 @@
 
     this%dloga_fluid = -log(this%a_fluid_switch)/this%npoints_fluid
 
-    mtilde = units * this%m
-
     yf(1) = grhov_fluid_switch
 
     ind=1
@@ -986,7 +1011,7 @@
         call dverk(this,NumEqsFluid,EvolveBackgroundFluid,afrom,yf,aend,this%integrate_tol,ind,cf,NumEqsFluid,wf)
         if (.not. this%check_error(afrom, aend)) return
         call EvolveBackgroundFluid(this,NumEqsFluid,aend,yf,wf(:,1))
-        weighting = exp(10*(-aend + log(this%a_fluid_switch)))
+        weighting = exp(this%weighting_factor*(-aend + log(this%a_fluid_switch)))
         call this%ValsAta(this%sampled_a_fluid(i), phi_scf, phidot_scf)
         grhov_scf = 0.5d0*phidot_scf**2 + this%sampled_a_fluid(i)**2*this%Vofphi(phi_scf,0,1)
         gpres_scf = 0.5d0*phidot_scf**2 - this%sampled_a_fluid(i)**2*this%Vofphi(phi_scf,0,1)

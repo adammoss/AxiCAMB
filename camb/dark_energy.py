@@ -201,10 +201,13 @@ class EarlyQuintessence(Quintessence):
         ("zc", c_double, "redshift of peak fractional early dark energy density"),
         ("fde_zc", c_double, "fraction of early dark energy density to total at peak"),
         ("oscillation_threshold", c_int, "oscillation_threshold"),
+        ("mH", c_double, "m / Hubble parameter threshold for switching to fluid approximation"),
+        ("weighting_factor", c_double, "weighting factor for switching to fluid approximation"),
         ("use_fluid_approximation", c_bool, "use fluid approximation"),
         ("use_PH", c_bool, "use PH"),
         ("npoints", c_int, "number of points for background integration spacing"),
         ("min_steps_per_osc", c_int, "minimum number of steps per background oscillation scale"),
+        ("a_fluid_switch", c_double, "a value at which to switch to fluid approximation"),
         ("fde", AllocatableArrayDouble, "after initialized, the calculated background early dark energy "
                                         "fractions at sampled_a"),
         ("__ddfde", AllocatableArrayDouble),
@@ -215,12 +218,11 @@ class EarlyQuintessence(Quintessence):
         ("__ddw_fluid", AllocatableArrayDouble),
         ("__npoints_fluid", c_int),
         ("__dloga_fluid", c_double),
-        ("__a_fluid_switch", c_double)
     ]
     _fortran_class_name_ = 'TEarlyQuintessence'
 
     def set_params(self, n=1, f=0.05, m=5e-54, potential_type=0, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=10, 
-                   use_fluid_approximation=False, use_PH=False):
+                   mH=0.0, use_fluid_approximation=False, use_PH=False, weighting_factor=10.0, a_fluid_switch=1.0):
         assert potential_type in [0, 1]
         self.n = n
         if potential_type == 1:
@@ -233,6 +235,7 @@ class EarlyQuintessence(Quintessence):
         self.theta_i = theta_i
         self.use_zc = use_zc
         self.oscillation_threshold = oscillation_threshold
+        self.mH = mH
         self.use_fluid_approximation = use_fluid_approximation
         self.use_PH = use_PH
         if use_zc:
@@ -240,7 +243,7 @@ class EarlyQuintessence(Quintessence):
                 raise ValueError("must set zc and fde_zc if using 'use_zc'")
             self.zc = zc
             self.fde_zc = fde_zc
-
-
+        self.weighting_factor = weighting_factor
+        self.a_fluid_switch = a_fluid_switch
 # short names for models that support w/wa
 F2003Class._class_names.update({'fluid': DarkEnergyFluid, 'ppf': DarkEnergyPPF})

@@ -198,6 +198,8 @@
         !If true, sigma_8 is not calculated either]]
         logical :: HasScalarTimeSources = .false. !No power spectra, only time transfer functions
 
+        real(dl) :: a_fluid_switch = 1.0_dl
+
         logical :: get_growth_sigma8 = .true.
         !gets sigma_vdelta, like sigma8 but using velocity-density cross power,
         !in late LCDM f*sigma8 = sigma_vdelta^2/sigma8
