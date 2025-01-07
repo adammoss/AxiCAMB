@@ -329,8 +329,8 @@
         delphis = (2*delphi*(D + 3*H)*k**2 + a**2*(2*D**2*ddelphidt + 12*D*ddelphidt*H + 18*ddelphidt*H**2 + 4*(2*ddelphidt + 3*delphi*H)*mtilde**2 + 2*dhsdt*mtilde*(-dphisdt + mtilde*phic) + D*dhsdt*(dphicdt + mtilde*phis) + 3*dhsdt*H*(dphicdt + mtilde*phis)))/(2.*mtilde*(2*k**2 + a**2*(D**2 + 3*D*H + 4*mtilde**2))) 
         ddelphicdt = (2*(2*ddelphidt - delphi*(D + 3*H))*k**2 - a**2*(6*D*ddelphidt*H + 3*dhsdt*dphicdt*H + 6*H*(3*ddelphidt*H + 2*delphi*mtilde**2) + dhsdt*mtilde*(-2*dphisdt + 2*mtilde*phic + 3*H*phis) + D*dhsdt*(dphicdt + mtilde*phis)))/(4*k**2 + 2*a**2*(D**2 + 3*D*H + 4*mtilde**2)) 
         ddelphisdt = -0.5*(2*delphi*k**4 + a**2*k**2*(2*D*ddelphidt + 6*ddelphidt*H + 4*delphi*mtilde**2 + dhsdt*(dphicdt + mtilde*phis)) + a**4*mtilde*(12*ddelphidt*H*mtilde - 6*D*delphi*H*mtilde + D*dhsdt*(dphisdt - mtilde*phic) + 2*dhsdt*mtilde*(dphicdt + mtilde*phis)))/(a**2*mtilde*(2*k**2 + a**2*(D**2 + 3*D*H + 4*mtilde**2)))
-        dgrhoe= 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*ddelphisdt) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
-        dgqe= 0.5d0 * k * a * (mtilde * (delphic*phis - delphis*phic) + delphic*dphicdt + delphis*dphisdt) 
+        dgrhoe = 0.5d0 * a2 * (dphicdt*ddelphicdt + dphisdt*ddelphisdt + mtilde * (phis*ddelphicdt - phic*ddelphisdt) + mtilde * (delphis*dphicdt - delphic*dphisdt) + 2 * mtilde**2 * (phis*delphis  + phic*delphic))
+        dgqe = 0.5d0 * k * a * (mtilde * (delphic*phis - delphis*phic) + delphic*dphicdt + delphis*dphisdt) 
         call this%ValsAta(a,phi,phidot)
         !write(*,*) a, phic, phis, delphic, delphis, dgrhoe / a2, (phidot*y(w_ix+1) + y(w_ix)*a**2*this%Vofphi(phi,1)) / a2, k * dgqe / a, k*k*phidot*y(w_ix) / a
         y(w_ix+2) = dgrhoe/grhov_fluid
@@ -361,6 +361,9 @@
         H = sqrt(grho_tot/3.0d0) / a2 
         dHdt =  - 0.5d0 * (grho_tot/3.0d0 + gpres_tot) / a**4 - H**2
         D = -H/2 * (3 - 2* dHdt / H**2)
+        grhov_fluid = 0.5d0*phidot**2 + a2*this%Vofphi(phi,0,1)
+        grho_tot = this%state%grho_no_de(a) + a2*grhov_fluid + a2*this%Vofphi(phi,0,2)
+        H = sqrt(grho_tot/3.0d0) / a2 
         phic = phi
         phis = (dphidt*((D+3*H)**2+4*mtilde**2)+6*H*mtilde**2*phi)/(D*(D+3*H)*mtilde+4*mtilde**3)
         dphisdt = (3*H*mtilde*(-2*dphidt+D*phi))/(D**2+3*D*H+4*mtilde**2)
