@@ -31,7 +31,7 @@
     ! General base class. Specific implemenetations should inherit, defining Vofphi and setting up
     ! initial conditions and interpolation tables
     type, extends(TDarkEnergyModel) :: TQuintessence
-        integer :: DebugLevel = 1 !higher then zero for some debug output to console
+        integer :: DebugLevel = 0 !higher then zero for some debug output to console
         real(dl) :: astart = 1e-7_dl
         real(dl) :: integrate_tol = 1e-6_dl
         real(dl), dimension(:), allocatable :: sampled_a, phi_a, phidot_a
