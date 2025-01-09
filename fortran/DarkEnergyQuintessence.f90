@@ -1225,6 +1225,26 @@
 
     call this%TDarkEnergyModel%ReadParams(Ini)
 
+    this%n = Ini%Read_Int('n', 3)
+    this%m = Ini%Read_Double('m', 5e-54_dl)
+    this%potential_type = Ini%Read_Int('potential_type', 0)
+    if (this%potential_type == 1) then
+        this%f = 1.0_dl
+    else
+        this%f = Ini%Read_Double('f', 0.05_dl)
+    end if
+    this%theta_i = Ini%Read_Double('theta_i', 0.0_dl)
+    this%use_zc = Ini%Read_Logical('use_zc', .true.)
+    this%zc = Ini%Read_Double('zc', 0.0_dl)
+    this%fde_zc = Ini%Read_Double('fde_zc', 0.0_dl)
+    this%use_fluid_approximation = Ini%Read_Logical('use_fluid_approximation', .false.)
+    this%use_PH = Ini%Read_Logical('use_PH', .false.)
+    this%mH = Ini%Read_Double('mH', 0.0_dl)
+    this%oscillation_threshold = Ini%Read_Int('oscillation_threshold', 1)
+    this%a_fluid_switch = Ini%Read_Double('a_fluid_switch', 1.0_dl)
+    this%weighting_factor = Ini%Read_Double('weighting_factor', 10.0_dl)
+    this%DebugLevel = Ini%Read_Int('DebugLevel', 0)
+
     end subroutine TEarlyQuintessence_ReadParams
 
 
