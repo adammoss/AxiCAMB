@@ -594,7 +594,12 @@
         if (this%n == 1) then
             if (this%use_PH) then
                 alpha = (k / (a * mtilde))**2
-                cs2_fluid =  ((1 + alpha)**0.5 - 1)**2 / alpha + 5.0/4.0 * (adotoa / (a * mtilde))**2
+                if (alpha > 1e-10) then
+                    cs2_fluid =  ((1 + alpha)**0.5 - 1)**2 / alpha
+                else
+                    cs2_fluid = k**2 / (k**2 + 4*mtilde**2*a2)
+                end if
+                cs2_fluid = cs2_fluid + 5.0/4.0 * (adotoa / (a * mtilde))**2
             else
                 cs2_fluid = k**2 / (k**2 + 4*mtilde**2*a2)
             end if
@@ -958,6 +963,7 @@
     end if
 
     this%state%a_fluid_switch = this%a_fluid_switch
+    this%state%frac_lambda0 = this%frac_lambda0
 
     call spline(this%sampled_a,this%phi_a,tot_points,splZero,splZero,this%ddphi_a)
     call spline(this%sampled_a,this%phidot_a,tot_points,splZero,splZero,this%ddphidot_a)

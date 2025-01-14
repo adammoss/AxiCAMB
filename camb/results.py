@@ -189,7 +189,8 @@ class CAMBdata(F2003Class):
                 ("PK_redshifts_index", c_int * model.max_transfer_redshifts, "Indices of the requested PK_redshifts"),
                 ("OnlyTransfers", c_bool, "Only calculating transfer functions, not power spectra"),
                 ("HasScalarTimeSources", c_bool, "calculate and save time source functions, not power spectra"),
-                ("a_fluid_switch", c_double, "a value at which to switch to fluid approximation")]
+                ("a_fluid_switch", c_double, "a value at which to switch to fluid approximation"),
+                ("frac_lambda0", c_double, "fraction of lambda0 at z=0")]
 
     # Note there are many more fields in Fortran. Since F2003Class is memory-managed by Fortran, we don't need
     # need to define them all in python.
