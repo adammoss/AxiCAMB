@@ -1168,7 +1168,11 @@
     allocate(State%CAMB_PK)
     call Transfer_GetMatterPowerData(State, State%MT, State%CAMB_PK)
 
-    call CP%NonLinearModel%GetNonLinRatios(State, State%CAMB_PK)
+    if (State%use_external_nonlin_ratio) then
+        call ApplyExternalNonlinRatio(State, State%CAMB_PK)
+    else
+        call CP%NonLinearModel%GetNonLinRatios(State, State%CAMB_PK)
+    end if
     first_step=1
     do while(State%TimeSteps%points(first_step) < State%Transfer_Times(1))
         first_step = first_step + 1
@@ -1213,6 +1217,24 @@
     !$OMP END PARALLEL DO
 
     end subroutine MakeNonlinearSources
+
+    subroutine ApplyExternalNonlinRatio(State, CAMB_PK)
+    use Transfer
+    class(CAMBdata) :: State
+    type(MatterPowerData) :: CAMB_PK
+    integer :: ik, iz
+    real(dl) :: kh, z
+
+    CAMB_PK%nonlin_ratio = 1.0_dl
+    do iz = 1, CAMB_PK%num_z
+        z = CAMB_PK%redshifts(iz)
+        do ik = 1, CAMB_PK%num_k
+            kh = exp(CAMB_PK%log_kh(ik))
+            CAMB_PK%nonlin_ratio(ik, iz) = State%ExternalNonlinRatio%Value(kh, z)
+        end do
+    end do
+
+    end subroutine ApplyExternalNonlinRatio
 
 
     subroutine InitSourceInterpolation

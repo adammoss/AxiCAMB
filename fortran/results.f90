@@ -32,6 +32,7 @@
     use config
     use model
     use splines
+    use Interpolation
     implicit none
     public
 
@@ -240,6 +241,9 @@
         Type(TTimeSources), allocatable :: ScalarTimeSources
         integer :: Scalar_C_last = C_PhiE
 
+        ! External non-linear ratio interpolator for custom P_NL
+        Type(TInterpGrid2D) :: ExternalNonlinRatio
+        logical :: use_external_nonlin_ratio = .false.
 
     contains
     procedure :: DeltaTime => CAMBdata_DeltaTime
@@ -598,6 +602,8 @@
     call Free_ClTransfer(this%ClData%CTransTens)
     call this%MT%Free()
     if (allocated(this%CAMB_Pk)) deallocate(this%CAMB_PK)
+    ! Note: External nonlin ratio is NOT cleared here - it should persist
+    ! across runs. Use clear_nonlin_ratio() to explicitly clear it.
 
     end subroutine CAMBdata_Free
 

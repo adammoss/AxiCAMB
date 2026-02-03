@@ -118,6 +118,9 @@ $(DLL_DIR)/camblib.so: libcambobj
 	$(F90C) $(SF90FLAGS) $(SMODOUT) $(IFLAG)$(DLL_DIR)/ $(IFLAG)"$(FORUTILS_DIR)"  \
 		$(LIBCAMBOBJ) $(F90CRLINK) $(LIBLINK) -o $(DLL_DIR)/camblib.so
 	cp $(DLL_DIR)/camblib.so $(PYCAMB_OUTPUT_DIR)
+ifeq ($(shell uname -s),Darwin)
+	codesign --force --sign - $(PYCAMB_OUTPUT_DIR)/camblib.so
+endif
 
 
 $(CAMBLIB): $(CAMBOBJ)

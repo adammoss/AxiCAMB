@@ -731,4 +731,24 @@
 
     end subroutine GetBackgroundThermalEvolution
 
+    subroutine CAMBdata_SetExternalNonlinRatio(Data, nk, nz, k_h_arr, z_arr, ratio_arr)
+    Type(CAMBdata), target :: Data
+    integer, intent(in) :: nk, nz
+    real(dl), intent(in) :: k_h_arr(nk)      ! k in h/Mpc units
+    real(dl), intent(in) :: z_arr(nz)        ! redshifts (ascending)
+    real(dl), intent(in) :: ratio_arr(nk,nz) ! sqrt(P_NL/P_L)
+
+    call Data%ExternalNonlinRatio%Init(k_h_arr, z_arr, ratio_arr)
+    Data%use_external_nonlin_ratio = .true.
+
+    end subroutine CAMBdata_SetExternalNonlinRatio
+
+    subroutine CAMBdata_ClearExternalNonlinRatio(Data)
+    Type(CAMBdata), target :: Data
+
+    call Data%ExternalNonlinRatio%Clear()
+    Data%use_external_nonlin_ratio = .false.
+
+    end subroutine CAMBdata_ClearExternalNonlinRatio
+
     end module handles

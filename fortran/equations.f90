@@ -2307,6 +2307,10 @@
             adotoa, k, EV%Kf(1), ay, ayprime, EV%w_ix)
         dgrho = dgrho + dgrho_de
         dgq = dgq + dgq_de
+        ! Include axion perturbations in matter for transfer functions
+        ! Subtract CC contribution (which doesn't cluster) from grhov_t
+        dgrho_matter = dgrho_matter + dgrho_de
+        grho_matter = grho_matter + grhov_t - State%frac_lambda0 * State%grhov * a * a
     end if
 
     !  Get sigma (shear) and z from the constraints

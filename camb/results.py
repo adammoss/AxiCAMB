@@ -802,6 +802,31 @@ class CAMBdata(F2003Class):
                                                      have_power_spectra=have_power_spectra, params=params,
                                                      nonlinear=True)
 
+    def set_nonlin_ratio(self, k_h, z, ratio):
+        """
+        Set external non-linear ratio for lensing calculation. This allows using
+        a custom non-linear matter power spectrum (e.g., from axionHMcode) instead
+        of CAMB's internal Halofit/HMcode calculation.
+
+        After setting the external ratio, call get_lensed_scalar_cls() to compute
+        lensed CMB power spectra using the external P_NL.
+
+        :param k_h: 1D array of k values in h/Mpc units (must be ascending)
+        :param z: 1D array of redshift values (must be ascending)
+        :param ratio: 2D array of sqrt(P_NL/P_L), shape (len(k_h), len(z))
+        """
+        k_h = np.ascontiguousarray(k_h, dtype=np.float64)
+        z = np.ascontiguousarray(z, dtype=np.float64)
+        ratio = np.asfortranarray(ratio, dtype=np.float64)  # Fortran column-major order
+        if ratio.shape != (len(k_h), len(z)):
+            raise CAMBError(f"ratio shape {ratio.shape} doesn't match (len(k_h), len(z)) = ({len(k_h)}, {len(z)})")
+        nk, nz = c_int(len(k_h)), c_int(len(z))
+        CAMBdata_SetExternalNonlinRatio(byref(self), byref(nk), byref(nz), k_h, z, ratio)
+
+    def clear_nonlin_ratio(self):
+        """Clear external non-linear ratio, revert to internal calculation."""
+        CAMBdata_ClearExternalNonlinRatio(byref(self))
+
     def get_sigmaR(self, R, z_indices=None, var1=None, var2=None, hubble_units=True, return_R_z=False):
         r"""
         Calculate :math:`\sigma_R` values, the RMS linear matter fluctuation in spheres of radius R in linear theory.
@@ -1657,6 +1682,15 @@ CAMBdata_GetSigmaRArray.argtypes = [POINTER(CAMBdata), numpy_2d, numpy_1d, int_a
 CAMBdata_CalcBackgroundTheory = camblib.__handles_MOD_cambdata_calcbackgroundtheory
 CAMBdata_CalcBackgroundTheory.argtypes = [POINTER(CAMBdata), POINTER(model.CAMBparams)]
 CAMBdata_CalcBackgroundTheory.restype = c_int
+
+CAMBdata_SetExternalNonlinRatio = camblib.__handles_MOD_cambdata_setexternalnonlinratio
+CAMBdata_SetExternalNonlinRatio.argtypes = [
+    POINTER(CAMBdata), int_arg, int_arg, numpy_1d, numpy_1d,
+    ndpointer(c_double, flags="F_CONTIGUOUS", ndim=2)
+]
+
+CAMBdata_ClearExternalNonlinRatio = camblib.__handles_MOD_cambdata_clearexternalnonlinratio
+CAMBdata_ClearExternalNonlinRatio.argtypes = [POINTER(CAMBdata)]
 
 CAMB_SetTotCls = camblib.__handles_MOD_camb_settotcls
 CAMB_SetUnlensedCls = camblib.__handles_MOD_camb_setunlensedcls
