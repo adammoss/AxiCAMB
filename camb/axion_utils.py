@@ -99,7 +99,6 @@ def get_axion_phi_i(
         - 'frac_lambda0': Fraction of DE that is cosmological constant
         - 'm': Axion mass in CAMB units (reduced Planck mass)
         - 'omega_ax_h2': Achieved axion density
-        - 'params': CAMBparams object ready for get_results()
         Returns None if convergence failed.
     """
     # Convert mass to CAMB units (reduced Planck mass units)
@@ -270,35 +269,11 @@ def get_axion_phi_i(
             print(f"           omega_ax_h2 = {omega_ax_h2:.6e} (target: {omega_ax_h2_target:.6e})")
             print(f"           rel_error = {rel_error:.2e}")
 
-        # Build final CAMBparams object
-        pars = camb.set_params(
-            H0=h * 100,
-            ombh2=ombh2,
-            omch2=omch2_cdm,
-            omk=0,
-            tau=0.05,
-            As=2.196e-9,
-            ns=0.9655,
-            dark_energy_model='EarlyQuintessence',
-            m=m_camb,
-            theta_i=theta_i,
-            frac_lambda0=frac_lambda0,
-            use_zc=False,
-            mH=mH,
-            use_PH=use_PH,
-            use_fluid_approximation=True,
-            potential_type=1,
-            weighting_factor=weighting_factor,
-            oscillation_threshold=oscillation_threshold,
-        )
-        pars.set_accuracy(AccuracyBoost=accuracy)
-
         return {
             'theta_i': theta_i,
             'frac_lambda0': frac_lambda0,
             'm': m_camb,
             'omega_ax_h2': omega_ax_h2,
-            'params': pars,
         }
 
     except ValueError as e:
@@ -323,4 +298,3 @@ if __name__ == "__main__":
         print(f"frac_lambda0 = {result['frac_lambda0']}")
         print(f"m = {result['m']}")
         print(f"omega_ax_h2 = {result['omega_ax_h2']}")
-        print(f"params = {type(result['params'])}")
