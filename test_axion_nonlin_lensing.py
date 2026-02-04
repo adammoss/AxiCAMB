@@ -8,6 +8,8 @@ This script:
 4. Plots comparison and ratios
 
 When ax_fraction > 0, uses proper axion cosmology via EarlyQuintessence.
+Uses the new delta_axion transfer function to extract proper CDM and axion
+component power spectra for axionHMcode input.
 """
 
 import numpy as np
@@ -36,7 +38,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     print("=" * 60)
 
     # Cosmology
-    H0, ombh2, omch2, As, ns = 67.5, 0.022, 0.122, 2.1e-9, 0.965
+    H0, ombh2, omch2, As, ns, tau = 67.5, 0.022, 0.122, 2.1e-9, 0.965, 0.05
     h = H0 / 100
     z_grid = np.array([0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0])
 
@@ -90,7 +92,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     # ============================================
     print(f"\n1. Computing standard CAMB (LCDM) with {halofit_version}...")
     params = camb.CAMBparams()
-    params.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2)
+    params.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2, tau=tau)
     params.InitPower.set_params(As=As, ns=ns)
     params.set_for_lmax(lmax, lens_potential_accuracy=1)
     params.DoLensing = True
@@ -122,7 +124,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             ombh2=ombh2,
             omch2=omch2_cdm,
             omk=0,
-            tau=0.05,
+            tau=tau,
             As=As,
             ns=ns,
             dark_energy_model='EarlyQuintessence',
@@ -132,12 +134,57 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             use_zc=False,
             use_fluid_approximation=True,
             potential_type=1,
+            weighting_factor=10.0,
+            oscillation_threshold=1,
         )
         params_axion_linear.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_linear.DoLensing = True
         params_axion_linear.NonLinear = camb.model.NonLinear_none
         results_axion_linear = camb.get_results(params_axion_linear)
         cls_axion_linear = results_axion_linear.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
+
+    # Also compute axion with standard Halofit (wrong non-linear model)
+    cls_axion_halofit = None
+    if ax_fraction > 0:
+        print("2c. Computing axion with standard Halofit (wrong NL model)...")
+        omch2_cdm = (1 - ax_fraction) * omch2
+        omch2_cdm = max(omch2_cdm, 1e-7)
+
+        params_axion_halofit = camb.set_params(
+            H0=H0,
+            ombh2=ombh2,
+            omch2=omch2_cdm,
+            omk=0,
+            tau=tau,
+            As=As,
+            ns=ns,
+            dark_energy_model='EarlyQuintessence',
+            m=axion_params_dict['m'],
+            theta_i=axion_params_dict['theta_i'],
+            frac_lambda0=axion_params_dict['frac_lambda0'],
+            use_zc=False,
+            use_fluid_approximation=True,
+            potential_type=1,
+            weighting_factor=10.0,
+            oscillation_threshold=1,
+        )
+        params_axion_halofit.set_for_lmax(lmax, lens_potential_accuracy=1)
+        params_axion_halofit.DoLensing = True
+        params_axion_halofit.NonLinear = camb.model.NonLinear_both
+        params_axion_halofit.NonLinearModel.halofit_version = halofit_version
+        params_axion_halofit.set_matter_power(redshifts=list(z_grid[::-1]), kmax=50.0)
+        results_axion_halofit = camb.get_results(params_axion_halofit)
+        cls_axion_halofit = results_axion_halofit.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
+
+    # Extract P(k) from axion Halofit for plotting
+    pk_nl_axion_halofit = None
+    if ax_fraction > 0 and results_axion_halofit is not None:
+        _, _, pk_nl_ax_hf_all = results_axion_halofit.get_nonlinear_matter_power_spectrum(
+            hubble_units=True, k_hunit=True
+        )
+        # Sort by ascending z (same order as z_sorted will be)
+        sort_idx_hf = np.argsort(z_grid)
+        pk_nl_axion_halofit = pk_nl_ax_hf_all[sort_idx_hf, :]
 
     # ============================================
     # 3. Get P_L and P_NL from CAMB for external ratio
@@ -165,6 +212,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     # 3b. Get axion linear P(k) if f_ax > 0
     # ============================================
     pk_lin_axion = None
+    pk_lin_cold = None
+    pk_lin_ax_component = None
     results_axion_lin = None
     if ax_fraction > 0:
         print("3b. Computing axion linear P(k) from EarlyQuintessence...")
@@ -176,7 +225,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             ombh2=ombh2,
             omch2=omch2_cdm,
             omk=0,
-            tau=0.05,
+            tau=tau,
             As=As,
             ns=ns,
             dark_energy_model='EarlyQuintessence',
@@ -186,6 +235,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             use_zc=False,
             use_fluid_approximation=True,
             potential_type=1,
+            weighting_factor=10.0,
+            oscillation_threshold=1,
         )
         params_axion_pk.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_pk.DoLensing = True
@@ -194,16 +245,29 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
 
         results_axion_lin = camb.get_results(params_axion_pk)
 
-        # Get linear power spectrum from axion cosmology
+        # Get total linear power spectrum from axion cosmology
         k_h_ax, z_pk_ax, pk_lin_ax_all = results_axion_lin.get_linear_matter_power_spectrum(
             hubble_units=True, k_hunit=True, nonlinear=False
+        )
+
+        # Get CDM component power spectrum (for axionHMcode)
+        _, _, pk_cold_all = results_axion_lin.get_linear_matter_power_spectrum(
+            var1='delta_cdm', var2='delta_cdm', hubble_units=True, k_hunit=True
+        )
+
+        # Get axion component power spectrum (for axionHMcode)
+        _, _, pk_ax_all = results_axion_lin.get_linear_matter_power_spectrum(
+            var1='delta_axion', var2='delta_axion', hubble_units=True, k_hunit=True
         )
 
         # Sort by ascending z
         sort_idx_ax = np.argsort(z_pk_ax)
         pk_lin_axion = pk_lin_ax_all[sort_idx_ax, :]
+        pk_lin_cold = pk_cold_all[sort_idx_ax, :]
+        pk_lin_ax_component = pk_ax_all[sort_idx_ax, :]
 
         print(f"   Got P_lin(k) for {len(z_sorted)} redshifts")
+        print(f"   Using delta_axion transfer function for proper component P(k)")
 
     # ============================================
     # 4. Compute axionHMcode P_NL
@@ -225,17 +289,13 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
         hmcode_params_z = HMcode_params.HMCode_param_dic(cosmos_z, k_h, pk_lin_z)
 
         if ax_fraction > 0:
-            # For axion cosmology, we need to estimate cold vs axion power
-            # Simple approximation: cold traces total on large scales,
-            # axion is suppressed on small scales
-            # TODO: Get proper transfer functions from CAMB
-            f_cold = (1 - ax_fraction)
-            f_ax = ax_fraction
-
+            # Use proper component power spectra from CAMB delta_axion transfer function
+            # This correctly captures: T_axion ~ T_cdm on large scales,
+            # T_axion suppressed on small scales (below Jeans scale)
             power_spec_dic_z = {
                 'k': k_h,
-                'power_cold': pk_lin_z * f_cold,  # Approximate cold component
-                'power_axion': pk_lin_z * f_ax,   # Approximate axion component
+                'power_cold': pk_lin_cold[i, :],      # CDM component from delta_cdm
+                'power_axion': pk_lin_ax_component[i, :],  # Axion component from delta_axion
                 'power_total': pk_lin_z,
             }
             axion_param_z = axion_params.func_axion_param_dic(
@@ -268,7 +328,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     # ============================================
     print("5. Computing lensed Cls with external CAMB Halofit ratio...")
     params_ext = camb.CAMBparams()
-    params_ext.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2)
+    params_ext.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2, tau=tau)
     params_ext.InitPower.set_params(As=As, ns=ns)
     params_ext.set_for_lmax(lmax, lens_potential_accuracy=1)
     params_ext.DoLensing = True
@@ -285,7 +345,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     # ============================================
     print("6. Computing lensed Cls with external axionHMcode ratio...")
     if ax_fraction > 0:
-        # Use axion cosmology for CMB calculation - create fresh params
+        # For axion cosmology, we need to recompute with external ratio
+        # Use fresh params but compute background first to initialize quintessence
         omch2_cdm = (1 - ax_fraction) * omch2
         omch2_cdm = max(omch2_cdm, 1e-7)
 
@@ -294,7 +355,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             ombh2=ombh2,
             omch2=omch2_cdm,
             omk=0,
-            tau=0.05,
+            tau=tau,
             As=As,
             ns=ns,
             dark_energy_model='EarlyQuintessence',
@@ -304,17 +365,23 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             use_zc=False,
             use_fluid_approximation=True,
             potential_type=1,
+            weighting_factor=10.0,
+            oscillation_threshold=1,
         )
         params_axion_ext.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_ext.DoLensing = True
         params_axion_ext.NonLinear = camb.model.NonLinear_lens
         params_axion_ext.set_matter_power(redshifts=list(z_sorted[::-1]), kmax=50.0)
-    else:
-        params_axion_ext = params_ext
 
-    results_axion_ext = CAMBdata()
-    results_axion_ext.set_nonlin_ratio(k_h, z_sorted, ratio_axion.T)
-    results_axion_ext.calc_power_spectra(params_axion_ext)
+        # Initialize background first to avoid Dverk errors
+        results_axion_ext = camb.get_background(params_axion_ext)
+        results_axion_ext.set_nonlin_ratio(k_h, z_sorted, ratio_axion.T)
+        results_axion_ext.calc_power_spectra(params_axion_ext)
+    else:
+        results_axion_ext = CAMBdata()
+        results_axion_ext.set_nonlin_ratio(k_h, z_sorted, ratio_axion.T)
+        results_axion_ext.calc_power_spectra(params_ext)
+
     cls_axion_ext = results_axion_ext.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
 
     # ============================================
@@ -334,6 +401,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
         if cls_axion_linear is not None:
             ax.plot(ell[2:], cls_axion_linear[2:, i], 'g--', label='Linear (axion)', alpha=0.7, lw=1.5)
         ax.plot(ell[2:], cls_standard[2:, i], 'b-', label=f'LCDM {halofit_version}', alpha=0.8, lw=1.5)
+        if cls_axion_halofit is not None:
+            ax.plot(ell[2:], cls_axion_halofit[2:, i], 'm-', label=f'Axion {halofit_version} (wrong NL)', alpha=0.8, lw=1.5)
         ax.plot(ell[2:], cls_camb_ext[2:, i], 'c--', label='External (CAMB ratio)', alpha=0.8, lw=1.5)
         ax.plot(ell[2:], cls_axion_ext[2:, i], 'r:', label='External (axionHMcode)', alpha=0.8, lw=2)
         ax.set_xlabel('$\\ell$')
@@ -374,9 +443,17 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
         ratio_axion_ext = np.ones_like(cls_axion_ext[:, idx])
         ratio_axion_ext[valid] = cls_axion_ext[valid, idx] / ref_cl[valid]
 
+        # Axion with wrong Halofit / Standard
+        ratio_axion_halofit = None
+        if cls_axion_halofit is not None:
+            ratio_axion_halofit = np.ones_like(cls_axion_halofit[:, idx])
+            ratio_axion_halofit[valid] = cls_axion_halofit[valid, idx] / ref_cl[valid]
+
         ax.plot(ell[2:], ratio_lin[2:], 'g-', label='Linear (LCDM)', alpha=0.8, lw=1.5)
         if ratio_axion_lin is not None:
             ax.plot(ell[2:], ratio_axion_lin[2:], 'g--', label='Linear (axion)', alpha=0.8, lw=1.5)
+        if ratio_axion_halofit is not None:
+            ax.plot(ell[2:], ratio_axion_halofit[2:], 'm-', label=f'Axion {halofit_version} (wrong NL)', alpha=0.8, lw=1.5)
         ax.plot(ell[2:], ratio_camb_ext[2:], 'c--', label='External (CAMB ratio)', alpha=0.8, lw=1.5)
         ax.plot(ell[2:], ratio_axion_ext[2:], 'r:', label='External (axionHMcode)', alpha=0.8, lw=2)
         ax.axhline(1.0, color='b', linestyle='-', alpha=0.5, lw=1, label=f'LCDM {halofit_version}')
@@ -393,6 +470,97 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     print(f"   Saved: external_ratio_comparison{suffix}.png")
     plt.close()
 
+    # Plot 3: Matter power spectra P(k) at z=0
+    fig3, axes3 = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Find z=0 index
+    z0_idx = np.argmin(np.abs(z_sorted))
+
+    # Left panel: P(k)
+    ax = axes3[0]
+    ax.loglog(k_h, pk_lin_sorted[z0_idx, :], 'g-', label='Linear (LCDM)', alpha=0.7, lw=1.5)
+    ax.loglog(k_h, pk_nl_sorted[z0_idx, :], 'b-', label=f'LCDM {halofit_version}', alpha=0.8, lw=1.5)
+    if pk_lin_axion is not None:
+        ax.loglog(k_h, pk_lin_axion[z0_idx, :], 'g--', label='Linear (axion)', alpha=0.7, lw=1.5)
+    if pk_nl_axion_halofit is not None:
+        ax.loglog(k_h, pk_nl_axion_halofit[z0_idx, :], 'm-', label=f'Axion {halofit_version} (wrong NL)', alpha=0.8, lw=1.5)
+    ax.loglog(k_h, pk_nl_axion_hm[z0_idx, :], 'r:', label='Axion HMcode', alpha=0.8, lw=2)
+    ax.set_xlabel('$k$ [$h$/Mpc]')
+    ax.set_ylabel('$P(k)$ [(Mpc/$h$)$^3$]')
+    ax.set_title(f'Matter Power Spectrum at z={z_sorted[z0_idx]:.1f}')
+    ax.legend(fontsize=9)
+    ax.set_xlim(k_h[0], k_h[-1])
+    ax.grid(True, alpha=0.3)
+
+    # Right panel: Ratio to LCDM Halofit
+    ax = axes3[1]
+    pk_ref = pk_nl_sorted[z0_idx, :]
+    valid_k = pk_ref > 0
+
+    ax.semilogx(k_h[valid_k], pk_lin_sorted[z0_idx, valid_k] / pk_ref[valid_k], 'g-',
+                label='Linear (LCDM)', alpha=0.7, lw=1.5)
+    if pk_lin_axion is not None:
+        ax.semilogx(k_h[valid_k], pk_lin_axion[z0_idx, valid_k] / pk_ref[valid_k], 'g--',
+                    label='Linear (axion)', alpha=0.7, lw=1.5)
+    if pk_nl_axion_halofit is not None:
+        ax.semilogx(k_h[valid_k], pk_nl_axion_halofit[z0_idx, valid_k] / pk_ref[valid_k], 'm-',
+                    label=f'Axion {halofit_version} (wrong NL)', alpha=0.8, lw=1.5)
+    ax.semilogx(k_h[valid_k], pk_nl_axion_hm[z0_idx, valid_k] / pk_ref[valid_k], 'r:',
+                label='Axion HMcode', alpha=0.8, lw=2)
+    ax.axhline(1.0, color='b', linestyle='-', alpha=0.5, lw=1, label=f'LCDM {halofit_version}')
+    ax.set_xlabel('$k$ [$h$/Mpc]')
+    ax.set_ylabel(f'$P(k)$ / $P_{{\\mathrm{{{halofit_version}}}}}(k)$')
+    ax.set_title(f'P(k) Ratio at z={z_sorted[z0_idx]:.1f}')
+    ax.legend(fontsize=9, loc='lower left')
+    ax.set_xlim(k_h[0], k_h[-1])
+    ax.set_ylim(0.5, 1.5)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f'pk_comparison{suffix}.png', dpi=150)
+    print(f"   Saved: pk_comparison{suffix}.png")
+    plt.close()
+
+    # Plot 4: Component power spectra (if axion)
+    if pk_lin_cold is not None and pk_lin_ax_component is not None:
+        fig4, axes4 = plt.subplots(1, 2, figsize=(14, 5))
+
+        # Left panel: Component P(k)
+        ax = axes4[0]
+        ax.loglog(k_h, pk_lin_axion[z0_idx, :], 'k-', label='Total', alpha=0.9, lw=2)
+        ax.loglog(k_h, pk_lin_cold[z0_idx, :], 'b-', label='CDM (delta_cdm)', alpha=0.7, lw=1.5)
+        ax.loglog(k_h, pk_lin_ax_component[z0_idx, :], 'r--', label='Axion (delta_axion)', alpha=0.7, lw=1.5)
+        ax.set_xlabel('$k$ [$h$/Mpc]')
+        ax.set_ylabel('$P(k)$ [(Mpc/$h$)$^3$]')
+        ax.set_title(f'Component Power Spectra at z={z_sorted[z0_idx]:.1f}')
+        ax.legend(fontsize=10)
+        ax.set_xlim(k_h[0], k_h[-1])
+        ax.grid(True, alpha=0.3)
+
+        # Right panel: Transfer function ratio T_axion/T_cdm = sqrt(P_axion/P_cdm)
+        ax = axes4[1]
+        valid_k = pk_lin_cold[z0_idx, :] > 0
+        T_ratio = np.sqrt(pk_lin_ax_component[z0_idx, valid_k] / pk_lin_cold[z0_idx, valid_k])
+        ax.semilogx(k_h[valid_k], T_ratio, 'r-', lw=2)
+        ax.axhline(1.0, color='k', linestyle='--', alpha=0.5, lw=1)
+        ax.set_xlabel('$k$ [$h$/Mpc]')
+        ax.set_ylabel('$T_{\\mathrm{axion}}(k) / T_{\\mathrm{CDM}}(k)$')
+        ax.set_title(f'Transfer Function Ratio at z={z_sorted[z0_idx]:.1f}')
+        ax.set_xlim(k_h[0], k_h[-1])
+        ax.set_ylim(0.0, 1.2)
+        ax.grid(True, alpha=0.3)
+
+        # Add annotation about physics
+        ax.annotate('Large scales: axion ~ CDM', xy=(0.05, 0.95), xycoords='axes fraction',
+                    fontsize=9, ha='left', va='top')
+        ax.annotate('Small scales: axion suppressed\n(below Jeans scale)', xy=(0.95, 0.15),
+                    xycoords='axes fraction', fontsize=9, ha='right', va='bottom')
+
+        plt.tight_layout()
+        plt.savefig(f'pk_components{suffix}.png', dpi=150)
+        print(f"   Saved: pk_components{suffix}.png")
+        plt.close()
+
     # ============================================
     # Print summary
     # ============================================
@@ -405,7 +573,12 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     for L in L_summary:
         print(f"\nTT at L={L}:")
         print(f"  CAMB {halofit_version} (ref): {cls_standard[L, 0]:.4f} muK^2")
-        print(f"  Linear:                   {cls_linear[L, 0]:.4f} muK^2  (ratio: {cls_linear[L, 0]/cls_standard[L, 0]:.6f})")
+        print(f"  Linear (LCDM):            {cls_linear[L, 0]:.4f} muK^2  (ratio: {cls_linear[L, 0]/cls_standard[L, 0]:.6f})")
+        if cls_axion_linear is not None:
+            print(f"  Linear (axion):           {cls_axion_linear[L, 0]:.4f} muK^2  (ratio: {cls_axion_linear[L, 0]/cls_standard[L, 0]:.6f})")
+            print(f"    -> Axion/LCDM linear:   {cls_axion_linear[L, 0]/cls_linear[L, 0]:.6f}")
+        if cls_axion_halofit is not None:
+            print(f"  Axion {halofit_version} (wrong NL): {cls_axion_halofit[L, 0]:.4f} muK^2  (ratio: {cls_axion_halofit[L, 0]/cls_standard[L, 0]:.6f})")
         print(f"  External (CAMB ratio):    {cls_camb_ext[L, 0]:.4f} muK^2  (ratio: {cls_camb_ext[L, 0]/cls_standard[L, 0]:.6f})")
         print(f"  External (axionHMcode):   {cls_axion_ext[L, 0]:.4f} muK^2  (ratio: {cls_axion_ext[L, 0]/cls_standard[L, 0]:.6f})")
 

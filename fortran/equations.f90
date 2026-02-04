@@ -2196,7 +2196,7 @@
     real(dl) phidot, polterdot, polterddot, octg, octgdot
     real(dl) ddopacity, visibility, dvisibility, ddvisibility, exptau, lenswindow
     real(dl) ISW, quadrupole_source, doppler, monopole_source, tau0, ang_dist
-    real(dl) dgrho_de, dgq_de, cs2_de
+    real(dl) dgrho_de, dgq_de, cs2_de, grho_axion
 
     k=EV%k_buf
     k2=EV%k2_buf
@@ -2731,6 +2731,17 @@
             EV%OutputTransfer(Transfer_Newt_vel_cdm)=  -k*sigma/adotoa
             EV%OutputTransfer(Transfer_Newt_vel_baryon) = -k*(vb + sigma)/adotoa
             EV%OutputTransfer(Transfer_vel_baryon_cdm) = vb
+            ! Axion transfer function (for EarlyQuintessence dark energy)
+            if (EV%is_cosmological_constant) then
+                EV%OutputTransfer(Transfer_axion) = 0
+            else
+                grho_axion = grhov_t - State%frac_lambda0 * State%grhov * a * a
+                if (grho_axion > 1e-30_dl) then
+                    EV%OutputTransfer(Transfer_axion) = dgrho_de / grho_axion
+                else
+                    EV%OutputTransfer(Transfer_axion) = 0
+                end if
+            end if
             if (State%CP%do21cm) then
                 Tspin = State%CP%Recomb%T_s(a)
                 xe = State%CP%Recomb%x_e(a)

@@ -171,31 +171,6 @@ def get_axion_phi_i(
         pars.set_accuracy(AccuracyBoost=accuracy)
         return camb.get_background(pars)
 
-    def run_axion_background_fast(theta_i):
-        """Run CAMB with given theta_i at low accuracy for quick probing."""
-        pars = camb.set_params(
-            H0=h * 100,
-            ombh2=ombh2,
-            omch2=omch2_cdm,
-            omk=0,
-            tau=0.05,
-            As=2.196e-9,
-            ns=0.9655,
-            dark_energy_model='EarlyQuintessence',
-            m=m_camb,
-            theta_i=theta_i,
-            frac_lambda0=frac_lambda0,
-            use_zc=False,
-            mH=mH,
-            use_PH=use_PH,
-            use_fluid_approximation=True,
-            potential_type=1,
-            weighting_factor=weighting_factor,
-            oscillation_threshold=oscillation_threshold,
-        )
-        pars.set_accuracy(AccuracyBoost=1)  # Low accuracy for speed
-        return camb.get_background(pars)
-
     def objective(theta_i):
         """Objective function: returns omega_ax_h2 - target (zero at solution)."""
         results = run_axion_background(theta_i)
@@ -207,7 +182,7 @@ def get_axion_phi_i(
 
     theta_probe = 0.1  # Reference probe value
     try:
-        results_probe = run_axion_background_fast(theta_probe)
+        results_probe = run_axion_background(theta_probe)
         omega_probe = get_omega_ax_h2(results_probe)
 
         # Estimate using scaling: omega_ax ∝ theta_i²
@@ -234,7 +209,7 @@ def get_axion_phi_i(
             theta_i *= factor
 
             try:
-                results = run_axion_background_fast(theta_i)
+                results = run_axion_background(theta_i)
                 omega_ax_h2 = get_omega_ax_h2(results)
             except Exception as e2:
                 if verbose:
