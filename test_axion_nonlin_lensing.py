@@ -25,17 +25,36 @@ import argparse
 sys.path.insert(0, '/Users/adammoss/work/code/axionHMcode')
 
 
-def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020'):
+def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020', accuracy_boost=2,
+             dome_calibrated=False):
     """
     Run comparison test with axionHMcode P_NL.
+
+    Parameters
+    ----------
+    dome_calibrated : bool
+        If True, use Dome+24 calibrated settings (arXiv:2409.11469) for axionHMcode.
+        If False, use basic settings with only one-halo damping.
+
+        WARNING: Dome+24 calibration uses beta2 parameter that is only calibrated for
+        z in [1, 8] and f_ax in [0.01, 0.3]. CMB lensing requires redshifts outside
+        this range (z=0, 0.5, 10, 20, 50), causing unreliable extrapolation.
+        For CMB lensing, use dome_calibrated=False (basic settings).
     """
     from halo_model import HMcode_params, PS_nonlin_cold, PS_nonlin_axion
     from axion_functions import axion_params
     from cosmology.overdensities import func_D_z_unnorm_int
 
     print("=" * 60)
+    hmcode_mode = "Dome+24" if dome_calibrated else "basic"
     print(f"External P_NL ratio test (m_ax={m_ax:.0e}, f_ax={ax_fraction}, halofit={halofit_version})")
+    print(f"axionHMcode mode: {hmcode_mode}")
     print("=" * 60)
+
+    if dome_calibrated:
+        print("\nWARNING: Dome+24 calibration uses beta2 parameter only valid for z in [1,8]")
+        print("         and f_ax in [0.01,0.3]. CMB lensing requires z=0,0.5,10,20,50 which")
+        print("         causes unreliable extrapolation. Results may be unphysical.")
 
     # Cosmology
     H0, ombh2, omch2, As, ns, tau = 67.5, 0.022, 0.122, 2.1e-9, 0.965, 0.05
@@ -55,6 +74,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             f_ax=ax_fraction,
             mass_ev=m_ax,
             verbose=True,
+            accuracy=accuracy_boost,
         )
         if axion_params_dict is None:
             raise RuntimeError("Failed to find axion initial conditions")
@@ -81,7 +101,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             'Omega_ax_0': omega_ax / h**2, 'Omega_m_0': (ombh2 + total_dark) / h**2,
             'omega_db_0': omega_d + ombh2, 'Omega_db_0': (omega_d + ombh2) / h**2,
             'h': h, 'ns': ns, 'As': As, 'z': z, 'm_ax': m_ax,
-            'M_min': 7, 'M_max': 18, 'k_piv': 0.05, 'version': 'basic',
+            'M_min': 7, 'M_max': 18, 'k_piv': 0.05, 'version': 'dome' if dome_calibrated else 'basic',
         }
         cosmos['Omega_w_0'] = 1 - cosmos['Omega_m_0']
         cosmos['G_a'] = func_D_z_unnorm_int(z, cosmos['Omega_m_0'], cosmos['Omega_w_0'])
@@ -178,8 +198,9 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
 
     # Extract P(k) from axion Halofit for plotting
     pk_nl_axion_halofit = None
+    k_h_ax_hf = None  # k array for axion halofit result (may differ from k_h_ax)
     if ax_fraction > 0 and results_axion_halofit is not None:
-        _, _, pk_nl_ax_hf_all = results_axion_halofit.get_nonlinear_matter_power_spectrum(
+        k_h_ax_hf, _, pk_nl_ax_hf_all = results_axion_halofit.get_nonlinear_matter_power_spectrum(
             hubble_units=True, k_hunit=True
         )
         # Sort by ascending z (same order as z_sorted will be)
@@ -215,6 +236,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     pk_lin_cold = None
     pk_lin_ax_component = None
     results_axion_lin = None
+    k_h_ax = None  # Initialize to None, will be set if ax_fraction > 0
     if ax_fraction > 0:
         print("3b. Computing axion linear P(k) from EarlyQuintessence...")
         omch2_cdm = (1 - ax_fraction) * omch2
@@ -239,6 +261,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             oscillation_threshold=1,
         )
         params_axion_pk.set_for_lmax(lmax, lens_potential_accuracy=1)
+        params_axion_pk.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_pk.DoLensing = True
         params_axion_pk.NonLinear = camb.model.NonLinear_none  # Linear only
         params_axion_pk.set_matter_power(redshifts=list(z_grid[::-1]), kmax=50.0)
@@ -274,43 +297,59 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     # ============================================
     print("4. Computing axionHMcode P_NL...")
     M_arr = np.logspace(7, 18, 100)
-    pk_nl_axion_hm = np.zeros_like(pk_lin_sorted)
+    # Use correct shape based on whether we have axions (different k array)
+    if ax_fraction > 0:
+        pk_nl_axion_hm = np.zeros_like(pk_lin_axion)
+    else:
+        pk_nl_axion_hm = np.zeros_like(pk_lin_sorted)
 
     for i, zi in enumerate(z_sorted):
         if ax_fraction > 0:
-            # Use axion linear P(k) from CAMB
+            # Use axion linear P(k) from CAMB with matching k array
+            k_for_hmcode = k_h_ax
             pk_lin_z = pk_lin_axion[i, :]
             omega_ax_h2 = axion_params_dict['omega_ax_h2']
             cosmos_z = make_cosmos_dict(zi, omega_ax_h2_actual=omega_ax_h2)
         else:
+            k_for_hmcode = k_h
             pk_lin_z = pk_lin_sorted[i, :]
             cosmos_z = make_cosmos_dict(zi)
 
-        hmcode_params_z = HMcode_params.HMCode_param_dic(cosmos_z, k_h, pk_lin_z)
+        hmcode_params_z = HMcode_params.HMCode_param_dic(cosmos_z, k_for_hmcode, pk_lin_z)
+
+        # HMcode options based on calibration choice
+        hmcode_opts = {
+            'alpha': dome_calibrated,
+            'eta_given': dome_calibrated,
+            'one_halo_damping': True,  # Always keep this True
+            'two_halo_damping': dome_calibrated,
+            'concentration_param': dome_calibrated,
+            'full_2h': False,
+        }
 
         if ax_fraction > 0:
             # Use proper component power spectra from CAMB delta_axion transfer function
             # This correctly captures: T_axion ~ T_cdm on large scales,
             # T_axion suppressed on small scales (below Jeans scale)
+            # Note: k_for_hmcode is k_h_ax (from axion run), matching the power arrays
             power_spec_dic_z = {
-                'k': k_h,
+                'k': k_for_hmcode,
                 'power_cold': pk_lin_cold[i, :],      # CDM component from delta_cdm
                 'power_axion': pk_lin_ax_component[i, :],  # Axion component from delta_axion
                 'power_total': pk_lin_z,
             }
             axion_param_z = axion_params.func_axion_param_dic(
-                M_arr, cosmos_z, power_spec_dic_z, hmcode_params_z, concentration_param=False
+                M_arr, cosmos_z, power_spec_dic_z, hmcode_params_z,
+                concentration_param=hmcode_opts['concentration_param']
             )
             PS_z = PS_nonlin_axion.func_full_halo_model_ax(
                 M_arr, power_spec_dic_z, cosmos_z, hmcode_params_z, axion_param_z,
-                alpha=False, eta_given=False, one_halo_damping=True,
-                two_halo_damping=False, concentration_param=False, full_2h=False
+                **hmcode_opts
             )
         else:
             PS_z = PS_nonlin_cold.func_non_lin_PS_matter(
                 M_arr, k_h, pk_lin_z, cosmos_z, hmcode_params_z, cosmos_z['Omega_m_0'],
-                alpha=False, eta_given=False, one_halo_damping=True,
-                two_halo_damping=False, concentration_param=False, full_2h=False
+                **hmcode_opts
             )
 
         pk_nl_axion_hm[i, :] = PS_z[0]
@@ -322,6 +361,15 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     with np.errstate(divide='ignore', invalid='ignore'):
         ratio_axion = np.sqrt(pk_nl_axion_hm / pk_lin_for_ratio)
         ratio_axion = np.nan_to_num(ratio_axion, nan=1.0, posinf=1.0, neginf=1.0)
+        # Cap ratio to physically reasonable values (e.g., sqrt(P_NL/P_L) shouldn't exceed ~10 for realistic cosmologies)
+        max_ratio = 20.0
+        if ratio_axion.max() > max_ratio:
+            print(f"   WARNING: Capping extreme ratio values (max was {ratio_axion.max():.2e}) to {max_ratio}")
+            ratio_axion = np.clip(ratio_axion, 0.0, max_ratio)
+
+    # Debug: check ratio statistics
+    print(f"   axionHMcode ratio stats: min={ratio_axion.min():.4f}, max={ratio_axion.max():.4f}, "
+          f"mean={ratio_axion.mean():.4f}, has_nan={np.isnan(ratio_axion).any()}")
 
     # ============================================
     # 5. Compute lensed Cls with external CAMB ratio (verification)
@@ -369,13 +417,15 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
             oscillation_threshold=1,
         )
         params_axion_ext.set_for_lmax(lmax, lens_potential_accuracy=1)
+        params_axion_ext.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_ext.DoLensing = True
         params_axion_ext.NonLinear = camb.model.NonLinear_lens
         params_axion_ext.set_matter_power(redshifts=list(z_sorted[::-1]), kmax=50.0)
 
         # Initialize background first to avoid Dverk errors
         results_axion_ext = camb.get_background(params_axion_ext)
-        results_axion_ext.set_nonlin_ratio(k_h, z_sorted, ratio_axion.T)
+        # Use k_h_ax which matches the axion ratio array
+        results_axion_ext.set_nonlin_ratio(k_h_ax, z_sorted, ratio_axion.T)
         results_axion_ext.calc_power_spectra(params_axion_ext)
     else:
         results_axion_ext = CAMBdata()
@@ -391,6 +441,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     ell = np.arange(lmax + 1)
     suffix = f'_m{m_ax:.0e}_f{ax_fraction}'.replace('+', '') if ax_fraction > 0 else '_LCDM'
     suffix += f'_{halofit_version}'
+    if dome_calibrated:
+        suffix += '_dome'
 
     # Plot 1: Lensed Cls
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
@@ -476,36 +528,51 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     # Find z=0 index
     z0_idx = np.argmin(np.abs(z_sorted))
 
+    # Use correct k array for axion data
+    k_ax = k_h_ax if ax_fraction > 0 else k_h
+
     # Left panel: P(k)
     ax = axes3[0]
     ax.loglog(k_h, pk_lin_sorted[z0_idx, :], 'g-', label='Linear (LCDM)', alpha=0.7, lw=1.5)
     ax.loglog(k_h, pk_nl_sorted[z0_idx, :], 'b-', label=f'LCDM {halofit_version}', alpha=0.8, lw=1.5)
     if pk_lin_axion is not None:
-        ax.loglog(k_h, pk_lin_axion[z0_idx, :], 'g--', label='Linear (axion)', alpha=0.7, lw=1.5)
+        ax.loglog(k_ax, pk_lin_axion[z0_idx, :], 'g--', label='Linear (axion)', alpha=0.7, lw=1.5)
     if pk_nl_axion_halofit is not None:
-        ax.loglog(k_h, pk_nl_axion_halofit[z0_idx, :], 'm-', label=f'Axion {halofit_version} (wrong NL)', alpha=0.8, lw=1.5)
-    ax.loglog(k_h, pk_nl_axion_hm[z0_idx, :], 'r:', label='Axion HMcode', alpha=0.8, lw=2)
+        ax.loglog(k_h_ax_hf, pk_nl_axion_halofit[z0_idx, :], 'm-', label=f'Axion {halofit_version} (wrong NL)', alpha=0.8, lw=1.5)
+    ax.loglog(k_ax, pk_nl_axion_hm[z0_idx, :], 'r:', label='Axion HMcode', alpha=0.8, lw=2)
     ax.set_xlabel('$k$ [$h$/Mpc]')
     ax.set_ylabel('$P(k)$ [(Mpc/$h$)$^3$]')
     ax.set_title(f'Matter Power Spectrum at z={z_sorted[z0_idx]:.1f}')
     ax.legend(fontsize=9)
-    ax.set_xlim(k_h[0], k_h[-1])
+    ax.set_xlim(k_h[0], min(k_h[-1], k_ax[-1]))
     ax.grid(True, alpha=0.3)
 
-    # Right panel: Ratio to LCDM Halofit
+    # Right panel: Ratio to LCDM Halofit (only for LCDM k range since we need LCDM reference)
     ax = axes3[1]
     pk_ref = pk_nl_sorted[z0_idx, :]
     valid_k = pk_ref > 0
 
     ax.semilogx(k_h[valid_k], pk_lin_sorted[z0_idx, valid_k] / pk_ref[valid_k], 'g-',
                 label='Linear (LCDM)', alpha=0.7, lw=1.5)
-    if pk_lin_axion is not None:
-        ax.semilogx(k_h[valid_k], pk_lin_axion[z0_idx, valid_k] / pk_ref[valid_k], 'g--',
+    # For axion ratios, interpolate onto LCDM k grid for comparison
+    if pk_lin_axion is not None and ax_fraction > 0:
+        from scipy.interpolate import interp1d
+        interp_lin_ax = interp1d(k_ax, pk_lin_axion[z0_idx, :], kind='linear', bounds_error=False, fill_value=np.nan)
+        pk_lin_ax_interp = interp_lin_ax(k_h)
+        valid_ax = np.isfinite(pk_lin_ax_interp) & valid_k
+        ax.semilogx(k_h[valid_ax], pk_lin_ax_interp[valid_ax] / pk_ref[valid_ax], 'g--',
                     label='Linear (axion)', alpha=0.7, lw=1.5)
-    if pk_nl_axion_halofit is not None:
-        ax.semilogx(k_h[valid_k], pk_nl_axion_halofit[z0_idx, valid_k] / pk_ref[valid_k], 'm-',
+    if pk_nl_axion_halofit is not None and ax_fraction > 0:
+        interp_nl_hf = interp1d(k_h_ax_hf, pk_nl_axion_halofit[z0_idx, :], kind='linear', bounds_error=False, fill_value=np.nan)
+        pk_nl_hf_interp = interp_nl_hf(k_h)
+        valid_hf = np.isfinite(pk_nl_hf_interp) & valid_k
+        ax.semilogx(k_h[valid_hf], pk_nl_hf_interp[valid_hf] / pk_ref[valid_hf], 'm-',
                     label=f'Axion {halofit_version} (wrong NL)', alpha=0.8, lw=1.5)
-    ax.semilogx(k_h[valid_k], pk_nl_axion_hm[z0_idx, valid_k] / pk_ref[valid_k], 'r:',
+    # Interpolate axionHMcode result onto LCDM k grid
+    interp_hm = interp1d(k_ax, pk_nl_axion_hm[z0_idx, :], kind='linear', bounds_error=False, fill_value=np.nan)
+    pk_hm_interp = interp_hm(k_h)
+    valid_hm = np.isfinite(pk_hm_interp) & valid_k
+    ax.semilogx(k_h[valid_hm], pk_hm_interp[valid_hm] / pk_ref[valid_hm], 'r:',
                 label='Axion HMcode', alpha=0.8, lw=2)
     ax.axhline(1.0, color='b', linestyle='-', alpha=0.5, lw=1, label=f'LCDM {halofit_version}')
     ax.set_xlabel('$k$ [$h$/Mpc]')
@@ -525,28 +592,28 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020')
     if pk_lin_cold is not None and pk_lin_ax_component is not None:
         fig4, axes4 = plt.subplots(1, 2, figsize=(14, 5))
 
-        # Left panel: Component P(k)
+        # Left panel: Component P(k) - use k_ax for all axion data
         ax = axes4[0]
-        ax.loglog(k_h, pk_lin_axion[z0_idx, :], 'k-', label='Total', alpha=0.9, lw=2)
-        ax.loglog(k_h, pk_lin_cold[z0_idx, :], 'b-', label='CDM (delta_cdm)', alpha=0.7, lw=1.5)
-        ax.loglog(k_h, pk_lin_ax_component[z0_idx, :], 'r--', label='Axion (delta_axion)', alpha=0.7, lw=1.5)
+        ax.loglog(k_ax, pk_lin_axion[z0_idx, :], 'k-', label='Total', alpha=0.9, lw=2)
+        ax.loglog(k_ax, pk_lin_cold[z0_idx, :], 'b-', label='CDM (delta_cdm)', alpha=0.7, lw=1.5)
+        ax.loglog(k_ax, pk_lin_ax_component[z0_idx, :], 'r--', label='Axion (delta_axion)', alpha=0.7, lw=1.5)
         ax.set_xlabel('$k$ [$h$/Mpc]')
         ax.set_ylabel('$P(k)$ [(Mpc/$h$)$^3$]')
         ax.set_title(f'Component Power Spectra at z={z_sorted[z0_idx]:.1f}')
         ax.legend(fontsize=10)
-        ax.set_xlim(k_h[0], k_h[-1])
+        ax.set_xlim(k_ax[0], k_ax[-1])
         ax.grid(True, alpha=0.3)
 
         # Right panel: Transfer function ratio T_axion/T_cdm = sqrt(P_axion/P_cdm)
         ax = axes4[1]
         valid_k = pk_lin_cold[z0_idx, :] > 0
         T_ratio = np.sqrt(pk_lin_ax_component[z0_idx, valid_k] / pk_lin_cold[z0_idx, valid_k])
-        ax.semilogx(k_h[valid_k], T_ratio, 'r-', lw=2)
+        ax.semilogx(k_ax[valid_k], T_ratio, 'r-', lw=2)
         ax.axhline(1.0, color='k', linestyle='--', alpha=0.5, lw=1)
         ax.set_xlabel('$k$ [$h$/Mpc]')
         ax.set_ylabel('$T_{\\mathrm{axion}}(k) / T_{\\mathrm{CDM}}(k)$')
         ax.set_title(f'Transfer Function Ratio at z={z_sorted[z0_idx]:.1f}')
-        ax.set_xlim(k_h[0], k_h[-1])
+        ax.set_xlim(k_ax[0], k_ax[-1])
         ax.set_ylim(0.0, 1.2)
         ax.grid(True, alpha=0.3)
 
@@ -624,7 +691,14 @@ if __name__ == "__main__":
     parser.add_argument('--lmax', type=int, default=3000, help='Maximum multipole')
     parser.add_argument('--halofit_version', type=str, default='mead2020',
                         help='CAMB halofit version (default: mead2020)')
+    parser.add_argument('--accuracy_boost', type=int, default=2, help='Accuracy boost for CAMB')
+    parser.add_argument('--dome', action='store_true',
+                        help='Use Dome+24 calibrated settings (arXiv:2409.11469) for axionHMcode. '
+                             'WARNING: Dome calibration uses beta2 only valid for z in [1,8] and '
+                             'f_ax in [0.01,0.3]. CMB lensing requires z=0,0.5,10,20,50 which causes '
+                             'unreliable extrapolation. Use basic settings (no --dome) for CMB lensing.')
     args = parser.parse_args()
 
     run_test(m_ax=args.m_ax, ax_fraction=args.ax_fraction, lmax=args.lmax,
-             halofit_version=args.halofit_version)
+             halofit_version=args.halofit_version, accuracy_boost=args.accuracy_boost,
+             dome_calibrated=args.dome)
