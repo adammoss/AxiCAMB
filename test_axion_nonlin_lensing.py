@@ -37,9 +37,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         If False, use basic settings with only one-halo damping.
 
         WARNING: Dome+24 calibration uses beta2 parameter that is only calibrated for
-        z in [1, 8] and f_ax in [0.01, 0.3]. CMB lensing requires redshifts outside
-        this range (z=0, 0.5, 10, 20, 50), causing unreliable extrapolation.
-        For CMB lensing, use dome_calibrated=False (basic settings).
+        z in [1, 8] and f_ax in [0.01, 0.3]. Extrapolation at z=0, 0.5, 10 may cause
+        some inaccuracy. For more robust results, use dome_calibrated=False (basic settings).
     """
     from halo_model import HMcode_params, PS_nonlin_cold, PS_nonlin_axion
     from axion_functions import axion_params
@@ -53,13 +52,14 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
 
     if dome_calibrated:
         print("\nWARNING: Dome+24 calibration uses beta2 parameter only valid for z in [1,8]")
-        print("         and f_ax in [0.01,0.3]. CMB lensing requires z=0,0.5,10,20,50 which")
-        print("         causes unreliable extrapolation. Results may be unphysical.")
+        print("         and f_ax in [0.01,0.3]. Extrapolation at z=0, 0.5, 10 may be unreliable.")
 
     # Cosmology
     H0, ombh2, omch2, As, ns, tau = 67.5, 0.022, 0.122, 2.1e-9, 0.965, 0.05
     h = H0 / 100
-    z_grid = np.array([0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0])
+    # Redshift grid for lensing - CAMB internally uses z=0 to 10 (or 15 with high accuracy)
+    # No need for z > 10 as it's beyond CAMB's lensing integration range
+    z_grid = np.array([0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0])
 
     # ============================================
     # Set up axion cosmology if f_ax > 0
@@ -695,8 +695,7 @@ if __name__ == "__main__":
     parser.add_argument('--dome', action='store_true',
                         help='Use Dome+24 calibrated settings (arXiv:2409.11469) for axionHMcode. '
                              'WARNING: Dome calibration uses beta2 only valid for z in [1,8] and '
-                             'f_ax in [0.01,0.3]. CMB lensing requires z=0,0.5,10,20,50 which causes '
-                             'unreliable extrapolation. Use basic settings (no --dome) for CMB lensing.')
+                             'f_ax in [0.01,0.3]. Extrapolation at z=0, 0.5, 10 may cause some inaccuracy.')
     args = parser.parse_args()
 
     run_test(m_ax=args.m_ax, ax_fraction=args.ax_fraction, lmax=args.lmax,

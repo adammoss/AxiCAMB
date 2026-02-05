@@ -1223,14 +1223,26 @@
     class(CAMBdata) :: State
     type(MatterPowerData) :: CAMB_PK
     integer :: ik, iz
-    real(dl) :: kh, z
+    real(dl) :: kh, z, kh_clamped, z_clamped
+    real(dl) :: k_min, k_max, z_min, z_max
+
+    ! Get bounds of the external ratio grid to clamp values
+    ! This prevents polynomial extrapolation which can give unreliable results
+    k_min = State%ExternalNonlinRatio%x(1)
+    k_max = State%ExternalNonlinRatio%x(State%ExternalNonlinRatio%nx)
+    z_min = State%ExternalNonlinRatio%y(1)
+    z_max = State%ExternalNonlinRatio%y(State%ExternalNonlinRatio%ny)
 
     CAMB_PK%nonlin_ratio = 1.0_dl
     do iz = 1, CAMB_PK%num_z
         z = CAMB_PK%redshifts(iz)
+        ! Clamp z to valid range (use boundary value instead of extrapolating)
+        z_clamped = max(z_min, min(z_max, z))
         do ik = 1, CAMB_PK%num_k
             kh = exp(CAMB_PK%log_kh(ik))
-            CAMB_PK%nonlin_ratio(ik, iz) = State%ExternalNonlinRatio%Value(kh, z)
+            ! Clamp k to valid range (use boundary value instead of extrapolating)
+            kh_clamped = max(k_min, min(k_max, kh))
+            CAMB_PK%nonlin_ratio(ik, iz) = State%ExternalNonlinRatio%Value(kh_clamped, z_clamped)
         end do
     end do
 
