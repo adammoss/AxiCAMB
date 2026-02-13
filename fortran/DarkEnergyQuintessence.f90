@@ -801,6 +801,9 @@
     phi_a(1)=y(1)
     phidot_a(1)=y(2)/this%astart**2
     sampled_a(1)=this%astart
+    a2 = sampled_a(1)**2
+    fde(1) = 1/((this%state%grho_no_de(sampled_a(1)) +  this%frac_lambda0*this%State%grhov*a2**2) &
+        /(a2*(0.5d0* phidot_a(1)**2 + a2*this%Vofphi(y(1),0))) + 1)
     da_osc = 1
     last_a = this%astart
     max_ix = 0
@@ -1048,6 +1051,7 @@
 
     call spline(this%sampled_a_fluid,this%grhov_fluid,this%npoints_fluid,splZero,splZero,this%ddgrhov_fluid)
     call spline(this%sampled_a_fluid,this%w_fluid,this%npoints_fluid,splZero,splZero,this%ddw_fluid)
+    call spline(this%sampled_a_fluid,this%dwdloga_fluid,this%npoints_fluid,splZero,splZero,this%dddwdloga_fluid)
 
     if (this%DebugLevel>0) then
         write(*,*) 'TEarlyQuintessence finished init'
