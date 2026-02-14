@@ -25,7 +25,7 @@ import argparse
 sys.path.insert(0, '/Users/adammoss/work/code/axionHMcode')
 
 
-def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020', accuracy_boost=2,
+def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020', accuracy_boost=1,
              dome_calibrated=False):
     """
     Run comparison test with axionHMcode P_NL.
@@ -115,6 +115,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
     params.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2, tau=tau)
     params.InitPower.set_params(As=As, ns=ns)
     params.set_for_lmax(lmax, lens_potential_accuracy=1)
+    params.set_accuracy(AccuracyBoost=accuracy_boost)
     params.DoLensing = True
     params.NonLinear = camb.model.NonLinear_both
     params.NonLinearModel.halofit_version = halofit_version
@@ -158,6 +159,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             oscillation_threshold=1,
         )
         params_axion_linear.set_for_lmax(lmax, lens_potential_accuracy=1)
+        params_axion_linear.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_linear.DoLensing = True
         params_axion_linear.NonLinear = camb.model.NonLinear_none
         results_axion_linear = camb.get_results(params_axion_linear)
@@ -189,6 +191,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             oscillation_threshold=1,
         )
         params_axion_halofit.set_for_lmax(lmax, lens_potential_accuracy=1)
+        params_axion_halofit.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_halofit.DoLensing = True
         params_axion_halofit.NonLinear = camb.model.NonLinear_both
         params_axion_halofit.NonLinearModel.halofit_version = halofit_version
@@ -379,6 +382,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
     params_ext.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2, tau=tau)
     params_ext.InitPower.set_params(As=As, ns=ns)
     params_ext.set_for_lmax(lmax, lens_potential_accuracy=1)
+    params_ext.set_accuracy(AccuracyBoost=accuracy_boost)
     params_ext.DoLensing = True
     params_ext.NonLinear = camb.model.NonLinear_lens
     params_ext.NonLinearModel = ExternalNonLinearRatio()
@@ -695,7 +699,7 @@ if __name__ == "__main__":
     parser.add_argument('--lmax', type=int, default=3000, help='Maximum multipole')
     parser.add_argument('--halofit_version', type=str, default='mead2020',
                         help='CAMB halofit version (default: mead2020)')
-    parser.add_argument('--accuracy_boost', type=int, default=2, help='Accuracy boost for CAMB')
+    parser.add_argument('--accuracy_boost', type=int, default=1, help='Accuracy boost for CAMB')
     parser.add_argument('--dome', action='store_true',
                         help='Use Dome+24 calibrated settings (arXiv:2409.11469) for axionHMcode. '
                              'WARNING: Dome calibration uses beta2 only valid for z in [1,8] and '
