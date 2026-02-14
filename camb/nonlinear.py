@@ -1,5 +1,9 @@
-from .baseconfig import F2003Class, fortran_class
-from ctypes import c_int, c_double
+from ctypes import POINTER, byref, c_double, c_int
+
+import numpy as np
+from numpy.ctypeslib import ndpointer
+
+from .baseconfig import F2003Class, fortran_class, numpy_1d
 
 
 class NonLinearModel(F2003Class):
@@ -99,3 +103,49 @@ class SecondOrderPK(NonLinearModel):
 
     def set_params(self):
         pass
+
+
+@fortran_class
+class ExternalNonLinearRatio(NonLinearModel):
+    """
+    Non-linear model that applies a user-supplied ratio sqrt(P_NL/P_L)
+    from an external source (e.g. CCL, axionHMcode).
+
+    Use :meth:`set_ratio` to provide the ratio grid, then assign this
+    as ``params.NonLinearModel`` before calling :func:`camb.get_results`.
+    """
+
+    _fortran_class_module_ = "ExternalNonLinearRatio"
+    _fortran_class_name_ = "TExternalNonLinearRatio"
+
+    _methods_ = [
+        ("SetRatio", [
+            POINTER(c_int), POINTER(c_int),
+            numpy_1d, numpy_1d,
+            ndpointer(c_double, flags="F_CONTIGUOUS", ndim=2),
+        ]),
+        ("ClearRatio", []),
+    ]
+
+    def set_ratio(self, k_h, z, ratio):
+        """
+        Set the non-linear ratio grid sqrt(P_NL/P_L).
+
+        :param k_h: 1D array of k values in h/Mpc units (ascending)
+        :param z: 1D array of redshift values (ascending)
+        :param ratio: 2D array of sqrt(P_NL/P_L), shape (len(k_h), len(z))
+        """
+        k_h = np.ascontiguousarray(k_h, dtype=np.float64)
+        z = np.ascontiguousarray(z, dtype=np.float64)
+        ratio = np.asfortranarray(ratio, dtype=np.float64)
+        if ratio.shape != (len(k_h), len(z)):
+            raise ValueError(
+                f"ratio shape {ratio.shape} must be (len(k_h), len(z)) = ({len(k_h)}, {len(z)})"
+            )
+        self.f_SetRatio(byref(c_int(len(k_h))), byref(c_int(len(z))), k_h, z, ratio)
+
+    def clear_ratio(self):
+        """
+        Clear the stored ratio, releasing interpolation data.
+        """
+        self.f_ClearRatio()
