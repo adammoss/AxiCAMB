@@ -133,16 +133,18 @@ class ExternalNonLinearRatio(NonLinearModel):
 
         :param k_h: 1D array of k values in h/Mpc units (ascending)
         :param z: 1D array of redshift values (ascending)
-        :param ratio: 2D array of sqrt(P_NL/P_L), shape (len(k_h), len(z))
+        :param ratio: 2D array of sqrt(P_NL/P_L), shape (len(z), len(k_h)),
+                      matching the convention of CAMB's get_matter_power_spectrum
         """
         k_h = np.ascontiguousarray(k_h, dtype=np.float64)
         z = np.ascontiguousarray(z, dtype=np.float64)
-        ratio = np.asfortranarray(ratio, dtype=np.float64)
-        if ratio.shape != (len(k_h), len(z)):
+        if ratio.shape != (len(z), len(k_h)):
             raise ValueError(
-                f"ratio shape {ratio.shape} must be (len(k_h), len(z)) = ({len(k_h)}, {len(z)})"
+                f"ratio shape {ratio.shape} must be (len(z), len(k_h)) = ({len(z)}, {len(k_h)})"
             )
-        self.f_SetRatio(byref(c_int(len(k_h))), byref(c_int(len(z))), k_h, z, ratio)
+        # Fortran expects (nk, nz) column-major; C-order (nz, nk) has the same memory layout
+        ratio_f = np.asfortranarray(ratio.T, dtype=np.float64)
+        self.f_SetRatio(byref(c_int(len(k_h))), byref(c_int(len(z))), k_h, z, ratio_f)
 
     def clear_ratio(self):
         """

@@ -386,7 +386,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
     params_ext.DoLensing = True
     params_ext.NonLinear = camb.model.NonLinear_lens
     params_ext.NonLinearModel = ExternalNonLinearRatio()
-    params_ext.NonLinearModel.set_ratio(k_h, z_sorted, ratio_camb.T)
+    params_ext.NonLinearModel.set_ratio(k_h, z_sorted, ratio_camb)
     params_ext.set_matter_power(redshifts=list(z_sorted[::-1]), kmax=50.0)
 
     results_camb_ext = camb.get_results(params_ext)
@@ -425,14 +425,14 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         params_axion_ext.NonLinear = camb.model.NonLinear_lens
         params_axion_ext.NonLinearModel = ExternalNonLinearRatio()
         # Use k_h_ax which matches the axion ratio array
-        params_axion_ext.NonLinearModel.set_ratio(k_h_ax, z_sorted, ratio_axion.T)
+        params_axion_ext.NonLinearModel.set_ratio(k_h_ax, z_sorted, ratio_axion)
         params_axion_ext.set_matter_power(redshifts=list(z_sorted[::-1]), kmax=50.0)
 
         results_axion_ext = camb.get_results(params_axion_ext)
     else:
         params_axion_ext = params_ext.copy()
         params_axion_ext.NonLinearModel = ExternalNonLinearRatio()
-        params_axion_ext.NonLinearModel.set_ratio(k_h, z_sorted, ratio_axion.T)
+        params_axion_ext.NonLinearModel.set_ratio(k_h, z_sorted, ratio_axion)
         results_axion_ext = camb.get_results(params_axion_ext)
 
     cls_axion_ext = results_axion_ext.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
