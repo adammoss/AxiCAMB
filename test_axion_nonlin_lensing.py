@@ -276,9 +276,15 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             hubble_units=True, k_hunit=True, nonlinear=False
         )
 
-        # Get CDM component power spectrum (for axionHMcode)
-        _, _, pk_cold_all = results_axion_lin.get_linear_matter_power_spectrum(
+        # Build the cold spectrum used by axionHMcode: weighted CDM+baryons
+        _, _, pk_cc_all = results_axion_lin.get_linear_matter_power_spectrum(
             var1='delta_cdm', var2='delta_cdm', hubble_units=True, k_hunit=True
+        )
+        _, _, pk_bb_all = results_axion_lin.get_linear_matter_power_spectrum(
+            var1='delta_baryon', var2='delta_baryon', hubble_units=True, k_hunit=True
+        )
+        _, _, pk_cb_all = results_axion_lin.get_linear_matter_power_spectrum(
+            var1='delta_cdm', var2='delta_baryon', hubble_units=True, k_hunit=True
         )
 
         # Get axion component power spectrum (for axionHMcode)
@@ -289,7 +295,12 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         # Sort by ascending z
         sort_idx_ax = np.argsort(z_pk_ax)
         pk_lin_axion = pk_lin_ax_all[sort_idx_ax, :]
-        pk_lin_cold = pk_cold_all[sort_idx_ax, :]
+        pk_cc = pk_cc_all[sort_idx_ax, :]
+        pk_bb = pk_bb_all[sort_idx_ax, :]
+        pk_cb = pk_cb_all[sort_idx_ax, :]
+        pk_lin_cold = (
+            omch2_cdm**2 * pk_cc + ombh2**2 * pk_bb + 2 * ombh2 * omch2_cdm * pk_cb
+        ) / (ombh2 + omch2_cdm)**2
         pk_lin_ax_component = pk_ax_all[sort_idx_ax, :]
 
         print(f"   Got P_lin(k) for {len(z_sorted)} redshifts")
@@ -311,14 +322,16 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             # Use axion linear P(k) from CAMB with matching k array
             k_for_hmcode = k_h_ax
             pk_lin_z = pk_lin_axion[i, :]
+            pk_cold_z = pk_lin_cold[i, :]
             omega_ax_h2 = axion_params_dict['omega_ax_h2']
             cosmos_z = make_cosmos_dict(zi, omega_ax_h2_actual=omega_ax_h2)
         else:
             k_for_hmcode = k_h
             pk_lin_z = pk_lin_sorted[i, :]
+            pk_cold_z = pk_lin_z
             cosmos_z = make_cosmos_dict(zi)
 
-        hmcode_params_z = HMcode_params.HMCode_param_dic(cosmos_z, k_for_hmcode, pk_lin_z)
+        hmcode_params_z = HMcode_params.HMCode_param_dic(cosmos_z, k_for_hmcode, pk_cold_z)
 
         # HMcode options based on calibration choice
         hmcode_opts = {
@@ -337,7 +350,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             # Note: k_for_hmcode is k_h_ax (from axion run), matching the power arrays
             power_spec_dic_z = {
                 'k': k_for_hmcode,
-                'power_cold': pk_lin_cold[i, :],      # CDM component from delta_cdm
+                'power_cold': pk_cold_z,              # Cold component = weighted CDM+baryons
                 'power_axion': pk_lin_ax_component[i, :],  # Axion component from delta_axion
                 'power_total': pk_lin_z,
             }
@@ -603,7 +616,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         # Left panel: Component P(k) - use k_ax for all axion data
         ax = axes4[0]
         ax.loglog(k_ax, pk_lin_axion[z0_idx, :], 'k-', label='Total', alpha=0.9, lw=2)
-        ax.loglog(k_ax, pk_lin_cold[z0_idx, :], 'b-', label='CDM (delta_cdm)', alpha=0.7, lw=1.5)
+        ax.loglog(k_ax, pk_lin_cold[z0_idx, :], 'b-', label='Cold (CDM+baryons)', alpha=0.7, lw=1.5)
         ax.loglog(k_ax, pk_lin_ax_component[z0_idx, :], 'r--', label='Axion (delta_axion)', alpha=0.7, lw=1.5)
         ax.set_xlabel('$k$ [$h$/Mpc]')
         ax.set_ylabel('$P(k)$ [(Mpc/$h$)$^3$]')
@@ -612,7 +625,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         ax.set_xlim(k_ax[0], k_ax[-1])
         ax.grid(True, alpha=0.3)
 
-        # Right panel: Transfer function ratio T_axion/T_cdm = sqrt(P_axion/P_cdm)
+        # Right panel: Transfer function ratio T_axion/T_cold = sqrt(P_axion/P_cold)
         ax = axes4[1]
         valid_k = pk_lin_cold[z0_idx, :] > 0
         T_ratio = np.sqrt(pk_lin_ax_component[z0_idx, valid_k] / pk_lin_cold[z0_idx, valid_k])
@@ -695,7 +708,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--m_ax', type=float, default=1e-25, help='Axion mass in eV')
-    parser.add_argument('--ax_fraction', type=float, default=0.0, help='Axion fraction (0=LCDM)')
+    parser.add_argument('--ax_fraction', type=float, default=0.3, help='Axion fraction (0=LCDM)')
     parser.add_argument('--lmax', type=int, default=3000, help='Maximum multipole')
     parser.add_argument('--halofit_version', type=str, default='mead2020',
                         help='CAMB halofit version (default: mead2020)')
