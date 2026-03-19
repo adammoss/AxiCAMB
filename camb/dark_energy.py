@@ -221,8 +221,8 @@ class EarlyQuintessence(Quintessence):
     ]
     _fortran_class_name_ = 'TEarlyQuintessence'
 
-    def set_params(self, n=1, f=0.05, m=5e-54, potential_type=0, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=1, 
-                   mH=0.0, use_fluid_approximation=False, use_PH=False, weighting_factor=10.0, a_fluid_switch=1.0, frac_lambda0=1.0):
+    def set_params(self, n=1, f=0.05, m=5e-54, potential_type=0, theta_i=0.0, use_zc=True, zc=None, fde_zc=None, oscillation_threshold=1,
+                   mH=50.0, use_fluid_approximation=False, use_PH=True, weighting_factor=10.0, a_fluid_switch=1.0, frac_lambda0=1.0):
         assert potential_type in [0, 1]
         self.n = n
         if potential_type == 1:

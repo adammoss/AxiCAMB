@@ -1054,6 +1054,19 @@
     call spline(this%sampled_a_fluid,this%dwdloga_fluid,this%npoints_fluid,splZero,splZero,this%dddwdloga_fluid)
 
     if (this%DebugLevel>0) then
+        ! Dump background evolution
+        open(unit=97, file='axicamb_background.txt', status='replace', action='write')
+        write(97,'(A)') '# a  phi  phidot  grhov_fluid'
+        do i=1, tot_points
+            write(97,'(4E18.8)') this%sampled_a(i), this%phi_a(i), this%phidot_a(i), 0.0_dl
+        end do
+        if (this%use_fluid_approximation .and. this%a_fluid_switch < 1.0_dl) then
+            do i=1, this%npoints_fluid
+                write(97,'(4E18.8)') this%sampled_a_fluid(i), 0.0_dl, 0.0_dl, this%grhov_fluid(i)
+            end do
+        end if
+        close(97)
+        write(*,*) 'Wrote axicamb_background.txt, tot_points=', tot_points
         write(*,*) 'TEarlyQuintessence finished init'
     end if
 

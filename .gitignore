@@ -40,3 +40,9 @@ camb/HighLExtrapTemplate_lenspotentialCls.dat
 .vscode/
 *.png
 notes/
+scripts/figures/
+scripts/*.dat
+scripts/*.npz
+output/
+comparisons/figures/
+axicamb_background.txt

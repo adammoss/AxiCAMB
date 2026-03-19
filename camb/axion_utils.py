@@ -58,6 +58,7 @@ def get_axion_phi_i(
     tol=1e-6,
     max_iter=100,
     verbose=True,
+    **cosmo_kwargs,
 ):
     """
     Find the initial axion field value theta_i that gives a target axion fraction.
@@ -90,6 +91,8 @@ def get_axion_phi_i(
         Maximum iterations for bracketing stage
     verbose : bool
         Print progress information
+    **cosmo_kwargs
+        Additional keyword arguments passed to camb.set_params (e.g. mnu=0)
 
     Returns
     -------
@@ -128,9 +131,7 @@ def get_axion_phi_i(
         ombh2=ombh2,
         omch2=omch2_total,
         omk=0,
-        tau=0.05,
-        As=2.196e-9,
-        ns=0.9655,
+        **cosmo_kwargs,
     )
     results_lcdm = camb.get_background(pars_lcdm)
 
@@ -153,9 +154,7 @@ def get_axion_phi_i(
             ombh2=ombh2,
             omch2=omch2_cdm,
             omk=0,
-            tau=0.05,
-            As=2.196e-9,
-            ns=0.9655,
+            **cosmo_kwargs,
             dark_energy_model='EarlyQuintessence',
             m=m_camb,
             theta_i=theta_i,

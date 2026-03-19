@@ -272,7 +272,7 @@
     integer itf
     real(dl) a,plin,pq,ph,pnl,rk
     real(dl) sig,rknl,rneff,rncur,d1,d2
-    real(dl) diff,xlogr1,xlogr2,rmid, h2
+    real(dl) diff,xlogr1,xlogr2,rmid, h2, omega_ax_h2
     integer i
 
     !$ if (ThreadNum /=0) call OMP_SET_NUM_THREADS(ThreadNum)
@@ -291,7 +291,10 @@
 
                 !!BR09 putting neutrinos into the matter as well, not sure if this is correct, but at least one will get a consisent omk.
                 h2 = (Params%H0/100)**2
-                this%omm0 = (Params%omch2+Params%ombh2+Params%omnuh2)/h2
+                ! Include the late-time axion density from EarlyQuintessence in the
+                ! naive nonlinear background bookkeeping.
+                omega_ax_h2 = max(0._dl, (1._dl - State%frac_lambda0) * State%grhov / State%grhocrit * h2)
+                this%omm0 = (Params%omch2+Params%ombh2+Params%omnuh2+omega_ax_h2)/h2
                 this%fnu = Params%omnuh2/h2/this%omm0
 
                 CAMB_Pk%nonlin_ratio = 1
@@ -1036,13 +1039,16 @@
     class(CAMBdata) :: State
     !Assigns the internal HMcode cosmological parameters
     TYPE(HM_cosmology) :: cosm
-    real(dl) h2
+    real(dl) h2, omega_ax_h2
 
     associate(CP => State%CP)
         !Converts CAMB parameters to Meadfit parameters
         h2 = (CP%H0/100)**2
-        cosm%om_m=(CP%omch2+CP%ombh2+CP%omnuh2)/h2
-        cosm%om_c=CP%omch2/h2
+        ! Include the late-time axion density from EarlyQuintessence in the
+        ! naive HMCode background bookkeeping.
+        omega_ax_h2 = max(0._dl, (1._dl - State%frac_lambda0) * State%grhov / State%grhocrit * h2)
+        cosm%om_m=(CP%omch2+CP%ombh2+CP%omnuh2+omega_ax_h2)/h2
+        cosm%om_c=(CP%omch2+omega_ax_h2)/h2
         cosm%om_b=CP%ombh2/h2
         cosm%om_nu=CP%omnuh2/h2
         cosm%om_v=State%omega_de

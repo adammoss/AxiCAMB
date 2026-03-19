@@ -18,8 +18,13 @@ from camb import model
 from camb.nonlinear import ExternalNonLinearRatio, Halofit
 from camb.axion_utils import get_axion_phi_i, get_omega_ax_h2
 import matplotlib.pyplot as plt
-import sys
+import sys, os
 import argparse
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+FIGDIR = os.path.join(os.path.dirname(__file__), 'figures')
+os.makedirs(FIGDIR, exist_ok=True)
 
 # Add axionHMcode to path
 sys.path.insert(0, '/Users/adammoss/work/code/axionHMcode')
@@ -157,10 +162,12 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             potential_type=1,
             weighting_factor=10.0,
             oscillation_threshold=1,
+            use_PH=True, mH=50.0,
         )
         params_axion_linear.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_linear.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_linear.DoLensing = True
+        params_axion_linear.DoLateRadTruncation = False
         params_axion_linear.NonLinear = camb.model.NonLinear_none
         results_axion_linear = camb.get_results(params_axion_linear)
         cls_axion_linear = results_axion_linear.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
@@ -189,10 +196,12 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             potential_type=1,
             weighting_factor=10.0,
             oscillation_threshold=1,
+            use_PH=True, mH=50.0,
         )
         params_axion_halofit.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_halofit.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_halofit.DoLensing = True
+        params_axion_halofit.DoLateRadTruncation = False
         params_axion_halofit.NonLinear = camb.model.NonLinear_both
         params_axion_halofit.NonLinearModel.halofit_version = halofit_version
         params_axion_halofit.set_matter_power(redshifts=list(z_grid[::-1]), kmax=50.0)
@@ -262,10 +271,12 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             potential_type=1,
             weighting_factor=10.0,
             oscillation_threshold=1,
+            use_PH=True, mH=50.0,
         )
         params_axion_pk.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_pk.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_pk.DoLensing = True
+        params_axion_pk.DoLateRadTruncation = False
         params_axion_pk.NonLinear = camb.model.NonLinear_none  # Linear only
         params_axion_pk.set_matter_power(redshifts=list(z_grid[::-1]), kmax=50.0)
 
@@ -431,10 +442,12 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             potential_type=1,
             weighting_factor=10.0,
             oscillation_threshold=1,
+            use_PH=True, mH=50.0,
         )
         params_axion_ext.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_ext.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_ext.DoLensing = True
+        params_axion_ext.DoLateRadTruncation = False
         params_axion_ext.NonLinear = camb.model.NonLinear_lens
         params_axion_ext.NonLinearModel = ExternalNonLinearRatio()
         # Use k_h_ax which matches the axion ratio array
@@ -482,8 +495,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
             ax.set_yscale('log')
 
     plt.tight_layout()
-    plt.savefig(f'external_ratio_cls{suffix}.png', dpi=150)
-    print(f"   Saved: external_ratio_cls{suffix}.png")
+    plt.savefig(os.path.join(FIGDIR, f'external_ratio_cls{suffix}.png'), dpi=150)
+    print(f"   Saved: {os.path.join(FIGDIR, f'external_ratio_cls{suffix}.png')}")
     plt.close()
 
     # Plot 2: Ratios relative to standard CAMB Halofit
@@ -534,8 +547,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(f'external_ratio_comparison{suffix}.png', dpi=150)
-    print(f"   Saved: external_ratio_comparison{suffix}.png")
+    plt.savefig(os.path.join(FIGDIR, f'external_ratio_comparison{suffix}.png'), dpi=150)
+    print(f"   Saved: {os.path.join(FIGDIR, f'external_ratio_comparison{suffix}.png')}")
     plt.close()
 
     # Plot 3: Matter power spectra P(k) at z=0
@@ -605,8 +618,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(f'pk_comparison{suffix}.png', dpi=150)
-    print(f"   Saved: pk_comparison{suffix}.png")
+    plt.savefig(os.path.join(FIGDIR, f'pk_comparison{suffix}.png'), dpi=150)
+    print(f"   Saved: {os.path.join(FIGDIR, f'pk_comparison{suffix}.png')}")
     plt.close()
 
     # Plot 4: Component power spectra (if axion)
@@ -645,8 +658,8 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
                     xycoords='axes fraction', fontsize=9, ha='right', va='bottom')
 
         plt.tight_layout()
-        plt.savefig(f'pk_components{suffix}.png', dpi=150)
-        print(f"   Saved: pk_components{suffix}.png")
+        plt.savefig(os.path.join(FIGDIR, f'pk_components{suffix}.png'), dpi=150)
+        print(f"   Saved: {os.path.join(FIGDIR, f'pk_components{suffix}.png')}")
         plt.close()
 
     # ============================================
@@ -707,7 +720,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--m_ax', type=float, default=1e-25, help='Axion mass in eV')
+    parser.add_argument('--m_ax', type=float, default=1e-24, help='Axion mass in eV')
     parser.add_argument('--ax_fraction', type=float, default=0.3, help='Axion fraction (0=LCDM)')
     parser.add_argument('--lmax', type=int, default=3000, help='Maximum multipole')
     parser.add_argument('--halofit_version', type=str, default='mead2020',
