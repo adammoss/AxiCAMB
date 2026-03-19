@@ -10,9 +10,10 @@ from camb.axion_utils import get_axion_phi_i
 def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         ombh2=0.022383, omch2_total=0.12011, H0=67.32,
         ns=0.96605, As=2.10058e-9, tau=0.0543,
-        kmax=50.0, use_PH=True, mH=50.0, verbose=True,
-        **cosmo_kwargs):
-    """Run AxiCAMB and return matter power spectra.
+        kmax=50.0, use_PH=True, mH=50.0, DoLateRadTruncation=True,
+        get_cls=False, do_lensing=False, lmax=2500,
+        verbose=True, **cosmo_kwargs):
+    """Run AxiCAMB and return matter power spectra and optionally Cls.
 
     Returns
     -------
@@ -23,6 +24,7 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         'sigma8': sigma8 at z=0
         'params': axion params dict from shooting
         'results': CAMB results object
+        'cls': dict with 'ell', 'tt', 'ee', 'te' (if get_cls=True)
     """
     params = get_axion_phi_i(
         h=H0 / 100, ombh2=ombh2, omch2_total=omch2_total,
@@ -44,11 +46,10 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         potential_type=1, weighting_factor=10.0,
         oscillation_threshold=1, use_PH=use_PH, mH=mH)
 
-    pars.set_for_lmax(2500, lens_potential_accuracy=1)
+    pars.set_for_lmax(lmax, lens_potential_accuracy=1)
     pars.NonLinear = model.NonLinear_none
-    # Disable late radiation truncation for EarlyQuintessence models
-    # (the approximation uses grhoc+grhob without the axion contribution)
-    pars.DoLateRadTruncation = False
+    pars.DoLateRadTruncation = DoLateRadTruncation
+    pars.DoLensing = do_lensing
     z_compute = sorted(set(list(z_arr) + [0.0]), reverse=True)
     pars.set_matter_power(redshifts=z_compute, kmax=kmax)
 
@@ -65,6 +66,20 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
     if verbose:
         print(f'  [AxiCAMB] sigma8 = {s8:.6f}')
 
+    cls = None
+    if get_cls:
+        if do_lensing:
+            cls_data = results.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
+        else:
+            cls_data = results.get_unlensed_scalar_cls(lmax=lmax, CMB_unit='muK')
+        ell = np.arange(cls_data.shape[0])
+        cls = {
+            'ell': ell,
+            'tt': cls_data[:, 0],
+            'ee': cls_data[:, 1],
+            'te': cls_data[:, 3],
+        }
+
     return {
         'k': k_h,
         'z': z_sorted,
@@ -72,6 +87,7 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         'sigma8': s8,
         'params': params,
         'results': results,
+        'cls': cls,
     }
 
 
@@ -106,16 +122,18 @@ def get_perturbation_evolution(m_ax=1e-24, f_ax=0.3, k_hMpc=0.5,
     }
 
 
-def get_lcdm_pk(z_arr=(0.0,), ombh2=0.022383, omch2=0.12011,
-                H0=67.32, ns=0.96605, As=2.10058e-9, tau=0.0543,
-                kmax=50.0, **cosmo_kwargs):
-    """Get LCDM linear P(k) for reference."""
+def get_lcdm(z_arr=(0.0,), ombh2=0.022383, omch2=0.12011,
+             H0=67.32, ns=0.96605, As=2.10058e-9, tau=0.0543,
+             kmax=50.0, get_cls=False, do_lensing=False, lmax=2500,
+             **cosmo_kwargs):
+    """Get LCDM linear P(k) and optionally Cls."""
     pars = camb.CAMBparams()
     pars.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2, tau=tau,
                        **cosmo_kwargs)
     pars.InitPower.set_params(As=As, ns=ns)
-    pars.set_for_lmax(2500, lens_potential_accuracy=1)
+    pars.set_for_lmax(lmax, lens_potential_accuracy=1)
     pars.NonLinear = model.NonLinear_none
+    pars.DoLensing = do_lensing
     pars.set_matter_power(
         redshifts=sorted(z_arr, reverse=True), kmax=kmax)
     results = camb.get_results(pars)
@@ -123,4 +141,30 @@ def get_lcdm_pk(z_arr=(0.0,), ombh2=0.022383, omch2=0.12011,
     k_h, z_pk, pk = results.get_linear_matter_power_spectrum(
         hubble_units=True, k_hunit=True, nonlinear=False)
     sort_idx = np.argsort(z_pk)
-    return k_h, z_pk[sort_idx], pk[sort_idx]
+
+    cls = None
+    if get_cls:
+        if do_lensing:
+            cls_data = results.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
+        else:
+            cls_data = results.get_unlensed_scalar_cls(lmax=lmax, CMB_unit='muK')
+        ell = np.arange(cls_data.shape[0])
+        cls = {
+            'ell': ell,
+            'tt': cls_data[:, 0],
+            'ee': cls_data[:, 1],
+            'te': cls_data[:, 3],
+        }
+
+    return {
+        'k': k_h,
+        'z': z_pk[sort_idx],
+        'pk': pk[sort_idx],
+        'cls': cls,
+    }
+
+
+def get_lcdm_pk(z_arr=(0.0,), **kwargs):
+    """Get LCDM linear P(k) — backward compatible wrapper."""
+    result = get_lcdm(z_arr=z_arr, **kwargs)
+    return result['k'], result['z'], result['pk']

@@ -167,7 +167,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         params_axion_linear.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_linear.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_linear.DoLensing = True
-        params_axion_linear.DoLateRadTruncation = False
+
         params_axion_linear.NonLinear = camb.model.NonLinear_none
         results_axion_linear = camb.get_results(params_axion_linear)
         cls_axion_linear = results_axion_linear.get_lensed_scalar_cls(lmax=lmax, CMB_unit='muK')
@@ -201,7 +201,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         params_axion_halofit.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_halofit.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_halofit.DoLensing = True
-        params_axion_halofit.DoLateRadTruncation = False
+
         params_axion_halofit.NonLinear = camb.model.NonLinear_both
         params_axion_halofit.NonLinearModel.halofit_version = halofit_version
         params_axion_halofit.set_matter_power(redshifts=list(z_grid[::-1]), kmax=50.0)
@@ -276,7 +276,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         params_axion_pk.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_pk.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_pk.DoLensing = True
-        params_axion_pk.DoLateRadTruncation = False
+
         params_axion_pk.NonLinear = camb.model.NonLinear_none  # Linear only
         params_axion_pk.set_matter_power(redshifts=list(z_grid[::-1]), kmax=50.0)
 
@@ -447,7 +447,7 @@ def run_test(m_ax=1e-25, ax_fraction=0.0, lmax=3000, halofit_version='mead2020',
         params_axion_ext.set_for_lmax(lmax, lens_potential_accuracy=1)
         params_axion_ext.set_accuracy(AccuracyBoost=accuracy_boost)
         params_axion_ext.DoLensing = True
-        params_axion_ext.DoLateRadTruncation = False
+
         params_axion_ext.NonLinear = camb.model.NonLinear_lens
         params_axion_ext.NonLinearModel = ExternalNonLinearRatio()
         # Use k_h_ax which matches the axion ratio array

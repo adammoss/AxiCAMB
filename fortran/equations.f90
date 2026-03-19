@@ -2258,9 +2258,23 @@
 
     dgrho = dgrho_matter
 
+    ! Compute DE perturbation early so it's included in RSA approximation
+    ! (important for EarlyQuintessence where DE perturbation is matter-like)
+    if (.not. EV%is_cosmological_constant) then
+        call State%CP%DarkEnergy%PerturbedStressEnergy(dgrho_de, dgq_de, &
+            a, dgq, dgrho, grho, grhov_t, w_dark_energy_t, gpres_noDE, etak, &
+            adotoa, k, EV%Kf(1), ay, ayprime, EV%w_ix)
+        dgrho_matter = dgrho_matter + dgrho_de
+        dgq = dgq + dgq_de
+        grho_axion = grhov_t - State%frac_lambda0 * State%grhov * a * a
+        grho_matter = grho_matter + grho_axion
+    end if
+
+    dgrho = dgrho_matter
+
     if (EV%no_nu_multpoles) then
         !RSA approximation of arXiv:1104.2933, dropping opactity terms in the velocity
-        !Approximate total density variables with just matter terms
+        !Approximate total density variables with matter + DE terms
         z=(0.5_dl*dgrho/k + etak)/adotoa
         dz= -adotoa*z - 0.5_dl*dgrho/k
         clxr=-4*dz/k
@@ -2300,18 +2314,6 @@
     !  Photon mass density over baryon mass density
     photbar=grhog_t/grhob_t
     pb43=4._dl/3*photbar
-
-    if (.not. EV%is_cosmological_constant) then
-        call State%CP%DarkEnergy%PerturbedStressEnergy(dgrho_de, dgq_de, &
-            a, dgq, dgrho, grho, grhov_t, w_dark_energy_t, gpres_noDE, etak, &
-            adotoa, k, EV%Kf(1), ay, ayprime, EV%w_ix)
-        dgrho = dgrho + dgrho_de
-        dgq = dgq + dgq_de
-        ! Include axion perturbations in matter for transfer functions
-        ! Subtract CC contribution (which doesn't cluster) from grhov_t
-        dgrho_matter = dgrho_matter + dgrho_de
-        grho_matter = grho_matter + grhov_t - State%frac_lambda0 * State%grhov * a * a
-    end if
 
     !  Get sigma (shear) and z from the constraints
     ! have to get z from eta for numerical stability
@@ -2735,7 +2737,6 @@
             if (EV%is_cosmological_constant) then
                 EV%OutputTransfer(Transfer_axion) = 0
             else
-                grho_axion = grhov_t - State%frac_lambda0 * State%grhov * a * a
                 if (grho_axion > 1e-30_dl) then
                     EV%OutputTransfer(Transfer_axion) = dgrho_de / grho_axion
                 else

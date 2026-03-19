@@ -14,8 +14,7 @@ from scipy.interpolate import interp1d
 import argparse
 import os
 
-import camb
-from camb.axion_utils import get_axion_phi_i
+import axicamb_runner
 import axiecamb_runner
 import cosmo_params
 
@@ -24,41 +23,23 @@ os.makedirs(FIGDIR, exist_ok=True)
 
 
 def get_axicamb_background(cosmo, axion):
-    """Get axion background from AxiCAMB."""
+    """Get axion background from AxiCAMB via the runner."""
     ax_kw = cosmo_params.get_axicamb_kwargs(cosmo, axion)
-
-    params = get_axion_phi_i(
-        h=ax_kw['H0'] / 100, ombh2=ax_kw['ombh2'],
-        omch2_total=ax_kw['omch2_total'],
-        f_ax=ax_kw['f_ax'], mass_ev=ax_kw['m_ax'], verbose=False,
-        use_PH=ax_kw['use_PH'], mH=ax_kw['mH'],
-        mnu=ax_kw['mnu'])
-
-    omch2_cdm = max((1 - ax_kw['f_ax']) * ax_kw['omch2_total'], 1e-7)
-    pars = camb.set_params(
-        H0=ax_kw['H0'], ombh2=ax_kw['ombh2'], omch2=omch2_cdm,
-        omk=0, tau=ax_kw['tau'], As=ax_kw['As'], ns=ax_kw['ns'],
-        mnu=ax_kw['mnu'],
-        dark_energy_model='EarlyQuintessence',
-        m=params['m'], theta_i=params['theta_i'],
-        frac_lambda0=params['frac_lambda0'],
-        use_zc=False, use_fluid_approximation=True,
-        potential_type=1, weighting_factor=10.0,
-        oscillation_threshold=1, use_PH=ax_kw['use_PH'], mH=ax_kw['mH'])
-    pars.set_matter_power(redshifts=[0.0], kmax=ax_kw['kmax'])
-    results = camb.get_results(pars)
+    result = axicamb_runner.run(verbose=False, **ax_kw)
+    camb_results = result['results']
 
     a_arr = np.logspace(-7, 0, 2000)
-    rho_de, w_de = results.get_dark_energy_rho_w(a_arr)
-    rho_cc = params['frac_lambda0'] * rho_de[-1]
+    rho_de, w_de = camb_results.get_dark_energy_rho_w(a_arr)
+    frac_lambda0 = result['params']['frac_lambda0']
+    rho_cc = frac_lambda0 * rho_de[-1]
     rho_ax = rho_de - rho_cc
 
     return {
         'a': a_arr,
         'rho_ax': rho_ax,
         'w_de': w_de,
-        'frac_lambda0': params['frac_lambda0'],
-        'tau0': results.conformal_time(0),
+        'frac_lambda0': frac_lambda0,
+        'tau0': camb_results.conformal_time(0),
     }
 
 

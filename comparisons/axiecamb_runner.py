@@ -14,18 +14,18 @@ AXIECAMB_DIR = os.environ.get('AXIECAMB_DIR',
 
 PARAMS_TEMPLATE = """\
 output_root = {output_root}
-get_scalar_cls = F
+get_scalar_cls = {get_scalar_cls}
 get_vector_cls = F
 get_tensor_cls = F
 CMB_outputscale = 7.4311e12
-get_transfer = T
+get_transfer = {get_transfer}
 accuracy_boost = 1
 l_accuracy_boost = 1
 high_accuracy_default = T
 do_nonlinear = 0
-l_max_scalar = 2700
-k_eta_max_scalar = 6000
-do_lensing = F
+l_max_scalar = {lmax}
+k_eta_max_scalar = {k_eta_max}
+do_lensing = {do_lensing}
 lensing_method = 1
 use_tabulated_w = F
 w = -1
@@ -118,6 +118,7 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         YHe=0.245861, omnuh2=0.0, Neff=3.046,
         massive_neutrinos=0, kmax=50.0,
         movH_switch=50.0, pert_output_kh=0.0,
+        get_cls=False, do_lensing=False, lmax=2700,
         axiecamb_dir=None, verbose=True):
     """Run AxiECAMB and return matter power spectra.
 
@@ -140,6 +141,8 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
     z_arr = sorted(set(list(z_arr) + [0.0]), reverse=True)
     output_root = 'compare'
 
+    get_transfer = not get_cls or True  # always get transfer for P(k)
+
     params_text = PARAMS_TEMPLATE.format(
         output_root=output_root,
         H0=H0, ombh2=ombh2, omdah2=omdah2,
@@ -150,6 +153,10 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         massive_neutrinos=massive_neutrinos,
         kmax=kmax, num_z=len(z_arr),
         redshift_block=_build_redshift_block(z_arr),
+        get_scalar_cls='T' if get_cls else 'F',
+        get_transfer='T' if get_transfer else 'F',
+        do_lensing='T' if do_lensing else 'F',
+        lmax=lmax, k_eta_max=2 * lmax,
     )
 
     # Run from axiecamb_dir so auxiliary files (lensing template, background dump) are accessible
@@ -217,6 +224,22 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
                     print(f'  [AxiECAMB] Loaded perturbation evolution: '
                           f'{len(pert_data)} steps, k={pert_output_kh} h/Mpc')
 
+        # Load Cls if requested
+        cls = None
+        if get_cls:
+            if do_lensing:
+                cls_file = os.path.join(axiecamb_dir, f'{output_root}_lensedCls.dat')
+            else:
+                cls_file = os.path.join(axiecamb_dir, f'{output_root}_scalCls.dat')
+            if os.path.exists(cls_file):
+                cls_data = np.loadtxt(cls_file)
+                cls = {
+                    'ell': cls_data[:, 0].astype(int),
+                    'tt': cls_data[:, 1],
+                    'ee': cls_data[:, 2],
+                    'te': cls_data[:, 3] if cls_data.shape[1] > 3 else None,
+                }
+
     return {
         'k': k_ref,
         'z': z_out,
@@ -224,6 +247,7 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         'sigma8': sigma8_list[::-1],
         'stdout': result.stdout,
         'pert_evolution': pert_evolution,
+        'cls': cls,
     }
 
 

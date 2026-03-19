@@ -180,7 +180,7 @@ def make_axion_camb_pars(axion_setup, ombh2, H0, ns, As, tau, z_arr,
         potential_type=1, weighting_factor=10.0, oscillation_threshold=1,
         use_PH=True, mH=50.0)
     pars.set_for_lmax(2500, lens_potential_accuracy=1)
-    pars.DoLateRadTruncation = False
+
     pars.NonLinear = model.NonLinear_both if nonlinear else model.NonLinear_none
     if nonlinear:
         pars.NonLinearModel.halofit_version = halofit_version

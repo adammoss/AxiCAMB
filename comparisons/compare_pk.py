@@ -85,14 +85,15 @@ def main():
         ratio = np.exp(f_ax_interp(np.log(k_compare))) / \
                 np.exp(f_ae_interp(np.log(k_compare)))
         valid = np.isfinite(ratio)
-        a2.semilogx(k_compare[valid], ratio[valid], 'k-', lw=1.5)
-        a2.axhline(1.0, color='gray', ls=':', alpha=0.5)
+        a2.semilogx(k_compare[valid], (ratio[valid] - 1) * 100, 'k-', lw=1.5)
+        a2.axhline(0, color='gray', ls=':', alpha=0.5)
+        a2.axhspan(-0.1, 0.1, color='gray', alpha=0.1)
         a2.set_xlabel(r'$k$ [$h$/Mpc]')
         a2.set_xlim(0.01, 10)
-        a2.set_ylim(0.85, 1.15)
+        a2.set_ylim(-1, 1)
         a2.grid(alpha=0.3)
         if iz == 0:
-            a2.set_ylabel('AxiCAMB / AxiECAMB')
+            a2.set_ylabel('AxiCAMB / AxiECAMB - 1 [%]')
 
     fig.suptitle(
         f'$m_a = {axion["m_ax"]:.0e}$ eV, $f_{{ax}} = {axion["f_ax"]}$, '
