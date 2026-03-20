@@ -147,12 +147,14 @@ def get_lcdm(z_arr=(0.0,), ombh2=0.022383, omch2=0.12011,
              kmax=50.0, get_cls=False, do_lensing=False, lmax=2500,
              nonlinear=False, halofit_version='mead2020',
              external_ratio=None, accuracy_boost=1,
+             Alens=1.0,
              **cosmo_kwargs):
     """Get LCDM P(k) and optionally Cls."""
     pars = camb.CAMBparams()
     pars.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2, tau=tau,
                        **cosmo_kwargs)
     pars.InitPower.set_params(As=As, ns=ns)
+    pars.Alens = Alens
     pars.set_for_lmax(lmax, lens_potential_accuracy=1)
     pars.set_accuracy(AccuracyBoost=accuracy_boost)
     if external_ratio is not None:

@@ -46,3 +46,4 @@ scripts/*.npz
 output/
 comparisons/
 axicamb_background.txt
+paper
