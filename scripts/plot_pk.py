@@ -121,6 +121,8 @@ if __name__ == '__main__':
                         help='Include naive CAMB HMCode-2020 nonlinear for axion')
     parser.add_argument('--debug', action='store_true',
                         help='Print axionHMcode inputs/parameters at each redshift')
+    parser.add_argument('--layout', type=str, default='row', choices=['row', 'column'],
+                        help='Layout: row (side-by-side) or column (stacked, single-column)')
     args = parser.parse_args()
 
     cosmo, axion = cosmo_params.from_args(args)
@@ -174,16 +176,31 @@ if __name__ == '__main__':
 
     # --- Plot ---
     nz = len(z_plot)
-    fig, axes = plt.subplots(2, nz, figsize=(6 * nz, 8),
-                              gridspec_kw={'height_ratios': [2, 1]},
-                              sharex='col', sharey='row')
-    if nz == 1:
-        axes = axes.reshape(2, 1)
+    if args.layout == 'column':
+        fig = plt.figure(figsize=(4.5, 3.5 * nz))
+        import matplotlib.gridspec as gridspec
+        outer = gridspec.GridSpec(nz, 1, hspace=0.3)
+        axes = np.empty((2, nz), dtype=object)
+        for iz in range(nz):
+            inner = gridspec.GridSpecFromSubplotSpec(
+                2, 1, subplot_spec=outer[iz], height_ratios=[2, 1], hspace=0)
+            axes[0, iz] = fig.add_subplot(inner[0])
+            axes[1, iz] = fig.add_subplot(inner[1], sharex=axes[0, iz])
+            plt.setp(axes[0, iz].get_xticklabels(), visible=False)
+    else:
+        fig, axes = plt.subplots(2, nz, figsize=(6 * nz, 8),
+                                  gridspec_kw={'height_ratios': [2, 1]},
+                                  sharex='col', sharey='row')
+        if nz == 1:
+            axes = axes.reshape(2, 1)
 
     z_lcdm = lcdm_data['z']
     k_lcdm = lcdm_data['k']
     k_ax = axion_results[False]['k']
     z_ax = axion_results[False]['z']
+
+    is_column = args.layout == 'column'
+    show_legend = True  # only show legend once
 
     for iz, zi in enumerate(z_plot):
         iz_lcdm = get_redshift_index(z_lcdm, zi)
@@ -194,11 +211,11 @@ if __name__ == '__main__':
 
         # Linear spectra (dashed)
         ax.loglog(k_ax, axion_results[False]['pk_total'][iz_ax], color='C0', ls='--',
-                  lw=1.5, alpha=0.7,
-                  label=f'Axion linear ($f_{{ax}}={f_ax}$)' if iz == 0 else None)
+                  lw=1.2, alpha=0.7,
+                  label=r'Axion linear' if show_legend else None)
         ax.loglog(k_lcdm, lcdm_data['pk'][iz_lcdm], color='k', ls='--',
-                  lw=1.5, alpha=0.7,
-                  label=r'$\Lambda$CDM linear' if iz == 0 else None)
+                  lw=1.2, alpha=0.7,
+                  label=r'$\Lambda$CDM linear' if show_legend else None)
 
         # Non-linear spectra (solid)
         for dome in [False, True]:
@@ -206,24 +223,25 @@ if __name__ == '__main__':
             tag = 'DOME' if dome else 'basic'
             iz_hm = get_redshift_index(axion_results[dome]['z'], zi)
             ax.loglog(axion_results[dome]['k'], axion_results[dome]['pk_nl'][iz_hm],
-                      color=color, ls='-', lw=1.5,
-                      label=f'axionHMcode {tag}' if iz == 0 else None)
+                      color=color, ls='-', lw=1.2,
+                      label=f'axionHMcode {tag}' if show_legend else None)
 
         if axion_naive is not None:
             iz_naive = get_redshift_index(axion_naive['z'], zi)
             ax.loglog(axion_naive['k'], axion_naive['pk_nl'][iz_naive], color='C2',
-                      ls='-', lw=1.5,
-                      label='Axion CAMB HMCode-2020 (naive)' if iz == 0 else None)
+                      ls='-', lw=1.2,
+                      label=r'Naive HMCode' if show_legend else None)
 
-        ax.loglog(k_lcdm, lcdm_data['pk_nl'][iz_lcdm], color='k', ls='-', lw=1.5,
-                  label=r'$\Lambda$CDM HMCode-2020' if iz == 0 else None)
+        ax.loglog(k_lcdm, lcdm_data['pk_nl'][iz_lcdm], color='k', ls='-', lw=1.2,
+                  label=r'$\Lambda$CDM HMCode' if show_legend else None)
 
-        ax.set_title(f'$z = {zi}$', fontsize=12)
-        ax.grid(True, alpha=0.3)
+        ax.text(0.95, 0.95, f'$z = {zi:.0f}$', transform=ax.transAxes,
+                fontsize=9, ha='right', va='top')
+        ax.grid(True, alpha=0.2)
         ax.set_xlim(1e-2, 50)
-        if iz == 0:
-            ax.set_ylabel(r'$P(k)$ [$(h^{-1}\mathrm{Mpc})^3$]')
-            ax.legend(fontsize=8, loc='lower left')
+        ax.set_ylabel(r'$P(k)$ [$(h^{-1}\,\mathrm{Mpc})^3$]')
+        if show_legend:
+            ax.legend(fontsize=6.5, loc='lower left', framealpha=0.8)
 
         # --- Bottom: ratio to NL LCDM ---
         ax2 = axes[1, iz]
@@ -238,30 +256,34 @@ if __name__ == '__main__':
             pk_nl_lcdm_interp = interp_nl_lcdm(k_hm)
             valid = np.isfinite(pk_nl_lcdm_interp) & (pk_nl_lcdm_interp > 0)
             ratio_nl = axion_results[dome]['pk_nl'][iz_hm, valid] / pk_nl_lcdm_interp[valid]
-            ax2.semilogx(k_hm[valid], ratio_nl, color=color, ls='-', lw=1.5,
-                         label=f'axionHMcode {tag}' if iz == 0 else None)
+            ax2.semilogx(k_hm[valid], ratio_nl, color=color, ls='-', lw=1.2,
+                         label=f'axionHMcode {tag}' if show_legend else None)
 
         if axion_naive is not None:
             iz_naive = get_redshift_index(axion_naive['z'], zi)
             pk_nl_lcdm_interp = interp_nl_lcdm(axion_naive['k'])
             valid = np.isfinite(pk_nl_lcdm_interp) & (pk_nl_lcdm_interp > 0)
             ratio_nl = axion_naive['pk_nl'][iz_naive, valid] / pk_nl_lcdm_interp[valid]
-            ax2.semilogx(axion_naive['k'][valid], ratio_nl, color='C2', ls='-', lw=1.5,
-                         label='Axion CAMB HMCode-2020 (naive)' if iz == 0 else None)
+            ax2.semilogx(axion_naive['k'][valid], ratio_nl, color='C2', ls='-', lw=1.2,
+                         label=r'Naive HMCode' if show_legend else None)
 
-        ax2.axhline(1.0, color='k', ls=':', alpha=0.5, lw=1)
-        ax2.set_xlabel(r'$k$ [$h$/Mpc]')
-        ax2.grid(True, alpha=0.3)
-        ax2.set_ylim(0.5, 1.6)
+        ax2.axhline(1.0, color='k', ls=':', alpha=0.5, lw=0.8)
+        if is_column and iz < nz - 1:
+            ax2.set_xlabel('')
+        else:
+            ax2.set_xlabel(r'$k$ [$h\,\mathrm{Mpc}^{-1}$]')
+        ax2.grid(True, alpha=0.2)
+        ax2.set_ylim(0.3, 1.8)
         ax2.set_xlim(1e-2, 50)
-        if iz == 0:
-            ax2.set_ylabel(r'$P_\mathrm{NL}^\mathrm{axion} / '
-                           r'P_\mathrm{NL}^{\Lambda\mathrm{CDM}}$')
-            ax2.legend(fontsize=8, loc='lower left')
+        ax2.set_ylabel(r'$P_\mathrm{NL}^\mathrm{axion} / '
+                       r'P_\mathrm{NL}^{\Lambda\mathrm{CDM}}$')
+
+        show_legend = False  # only on first panel
 
     mass_label = format_mass_label(m_ax)
-    fig.suptitle(f'$m_a = {mass_label}$ eV, $f_\\mathrm{{ax}} = {f_ax}$',
-                 fontsize=13)
+    if not is_column:
+        fig.suptitle(f'$m_a = {mass_label}$ eV, $f_\\mathrm{{ax}} = {f_ax}$',
+                     fontsize=10)
     plt.tight_layout()
     tag_file = f'pk_{format_mass_tag(m_ax)}_f{f_ax}'.replace('.', 'p')
     plt.savefig(os.path.join(FIGDIR, f'{tag_file}.pdf'), dpi=150,
