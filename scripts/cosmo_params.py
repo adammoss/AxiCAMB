@@ -4,7 +4,7 @@ Default cosmological parameters for AxiCAMB vs AxiECAMB comparisons.
 All comparison scripts should import from here to avoid parameter mismatches.
 """
 
-# Planck 2018 baseline (no neutrino mass)
+# Planck 2018 baseline
 DEFAULT = {
     'H0': 67.32,
     'ombh2': 0.022383,
@@ -12,7 +12,7 @@ DEFAULT = {
     'ns': 0.96605,
     'As': 2.10058e-9,
     'tau': 0.0543,
-    'mnu': 0.0,
+    'mnu': 0.06,
     'YHe': 0.245861,
     'Neff': 3.046,
     'kmax': 50.0,
