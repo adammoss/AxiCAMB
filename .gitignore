@@ -44,5 +44,5 @@ scripts/figures/
 scripts/*.dat
 scripts/*.npz
 output/
-comparisons/figures/
+comparisons/
 axicamb_background.txt

@@ -1,291 +1,128 @@
-"""Compare exported P(k) spectra from AxiCAMB and axionHMcode."""
+"""
+Compare linear P(k) between AxiCAMB and AxiECAMB.
 
+Usage:
+    python compare_pk.py --f_ax 0.3 --m_ax 1e-24 --z 0.0 1.0 2.0 3.0
+    python compare_pk.py --f_ax 0.001 --m_ax 1e-24
+"""
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 import argparse
 import os
 
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.lines import Line2D
-from scipy.interpolate import interp1d
+import axicamb_runner
+import axiecamb_runner
+import cosmo_params
 
-
-FIGDIR = os.path.join(os.path.dirname(__file__), "figures")
+FIGDIR = os.path.join(os.path.dirname(__file__), 'figures')
 os.makedirs(FIGDIR, exist_ok=True)
-K_MIN = 1e-2
-K_MAX = 5.0
-PK_MIN = 1e-3
-
-MODEL_SPECS = [
-    ("pk_lin_lcdm", "k_lin_lcdm", "Linear LCDM", "#999999"),
-    ("pk_lin_ax", "k_lin_ax", "Linear axion", "#d95f02"),
-    ("pk_nl_ax_basic", "k_nl_ax_basic", "Non-linear axion basic", "#e7298a"),
-    ("pk_nl_ax_dome", "k_nl_ax_dome", "Non-linear axion DOME", "#66a61e"),
-    ("pk_nl_ax_naive", "k_nl_ax_naive", "Non-linear axion naive CAMB", "#e6ab02"),
-]
-
-COMPONENT_SPECS = [
-    ("pk_lin_ax", "k_lin_ax", "Total linear axion", "#d95f02"),
-    ("pk_lin_cold_ax", "k_lin_cold_ax", "Cold component", "#1b9e77"),
-    ("pk_lin_axion_component", "k_lin_axion_component", "Axion component", "#7570b3"),
-]
-
-
-def load_export(path):
-    data = np.load(path)
-    return {key: data[key] for key in data.files}
-
-
-def check_redshifts(axicamb_data, axhm_data):
-    z_axicamb = np.asarray(axicamb_data["z"], dtype=float)
-    z_axhm = np.asarray(axhm_data["z"], dtype=float)
-    if z_axicamb.shape != z_axhm.shape or not np.allclose(z_axicamb, z_axhm):
-        raise ValueError(
-            f"Mismatched redshift arrays: {z_axicamb.tolist()} vs {z_axhm.tolist()}"
-        )
-    return z_axicamb
-
-
-def make_interp(k, pk):
-    valid = np.isfinite(k) & np.isfinite(pk) & (k > 0) & (pk > 0)
-    if np.count_nonzero(valid) < 2:
-        raise ValueError("Need at least two positive finite samples for interpolation")
-    return interp1d(
-        np.log(k[valid]),
-        np.log(pk[valid]),
-        kind="linear",
-        bounds_error=True,
-    )
-
-
-def overlapping_ratio(k1, pk1, k2, pk2, npts=500):
-    kmin = max(np.min(k1), np.min(k2))
-    kmax = min(np.max(k1), np.max(k2))
-    if not np.isfinite(kmin) or not np.isfinite(kmax) or kmin <= 0 or kmax <= kmin:
-        raise ValueError("No overlapping positive k-range for comparison")
-
-    k_common = np.geomspace(kmin, kmax, npts)
-    interp1 = make_interp(k1, pk1)
-    interp2 = make_interp(k2, pk2)
-    pk1_common = np.exp(interp1(np.log(k_common)))
-    pk2_common = np.exp(interp2(np.log(k_common)))
-    return k_common, pk1_common / pk2_common
-
-
-def build_title(axicamb_data, axhm_data):
-    m_ax = float(axicamb_data["m_ax"])
-    f_ax = float(axicamb_data["f_ax"])
-    source_a = str(np.asarray(axicamb_data["source"]).item())
-    source_b = str(np.asarray(axhm_data["source"]).item())
-    return f"P(k) comparison: AxiCAMB vs axionCAMB, m_ax={m_ax:.2e}, f_ax={f_ax:.3g}"
-
-
-def plot_comparison(axicamb_data, axhm_data, output, model_specs=None):
-    if model_specs is None:
-        model_specs = MODEL_SPECS
-    z_arr = check_redshifts(axicamb_data, axhm_data)
-    ncols = len(z_arr)
-    fig, axes = plt.subplots(
-        2,
-        ncols,
-        figsize=(5.2 * ncols, 8.2),
-        squeeze=False,
-        sharex="col",
-    )
-
-    for col, z in enumerate(z_arr):
-        ax_top = axes[0, col]
-        ax_ratio = axes[1, col]
-
-        for pk_key, k_key, label, color in model_specs:
-            k_axicamb = np.asarray(axicamb_data[k_key], dtype=float)
-            pk_axicamb = np.asarray(axicamb_data[pk_key][col], dtype=float)
-            k_axhm = np.asarray(axhm_data[k_key], dtype=float)
-            pk_axhm = np.asarray(axhm_data[pk_key][col], dtype=float)
-
-            ax_top.plot(
-                k_axicamb,
-                pk_axicamb,
-                color=color,
-                lw=2.4,
-                alpha=0.7,
-                solid_capstyle="round",
-            )
-            ax_top.plot(
-                k_axhm,
-                pk_axhm,
-                color=color,
-                lw=1.6,
-                ls=(0, (6, 3)),
-                zorder=3,
-            )
-
-            k_ratio, ratio = overlapping_ratio(k_axicamb, pk_axicamb, k_axhm, pk_axhm)
-            ax_ratio.plot(k_ratio, ratio, color=color, lw=2.0, label=label)
-
-        ax_top.set_xscale("log")
-        ax_top.set_yscale("log")
-        ax_top.set_xlim(K_MIN, K_MAX)
-        ax_top.set_ylim(bottom=PK_MIN)
-        ax_top.set_title(f"z = {z:.2f}")
-        ax_top.set_ylabel(r"$P(k)\,[h^{-3}\,\mathrm{Mpc}^3]$")
-        ax_top.grid(alpha=0.25, which="both")
-
-        ax_ratio.set_xscale("log")
-        ax_ratio.set_xlim(K_MIN, K_MAX)
-        ax_ratio.axhline(1.0, color="0.25", lw=1.0, ls=":")
-        ax_ratio.set_xlabel(r"$k\,[h\,\mathrm{Mpc}^{-1}]$")
-        ax_ratio.set_ylabel("AxiCAMB / axionCAMB")
-        ax_ratio.set_ylim(0.9, 1.1)
-        ax_ratio.grid(alpha=0.25, which="both")
-
-    model_handles = [
-        Line2D([0], [0], color=color, lw=2.5, label=label)
-        for _, _, label, color in model_specs
-    ]
-    style_handles = [
-        Line2D([0], [0], color="0.2", lw=2.4, alpha=0.7, label="AxiCAMB"),
-        Line2D([0], [0], color="0.2", lw=1.6, ls=(0, (6, 3)), label="axionCAMB"),
-    ]
-    fig.legend(model_handles, [h.get_label() for h in model_handles],
-               loc="upper center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 0.955))
-    fig.legend(style_handles, [h.get_label() for h in style_handles],
-               loc="upper center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.915))
-    fig.suptitle(build_title(axicamb_data, axhm_data), y=0.99)
-    fig.tight_layout(rect=(0, 0, 1, 0.88))
-    fig.savefig(output, dpi=150)
-
-
-def plot_linear_components(axicamb_data, axhm_data, output):
-    z_arr = check_redshifts(axicamb_data, axhm_data)
-    ncols = len(z_arr)
-    fig, axes = plt.subplots(
-        2,
-        ncols,
-        figsize=(5.2 * ncols, 8.2),
-        squeeze=False,
-        sharex="col",
-    )
-
-    for col, z in enumerate(z_arr):
-        ax_top = axes[0, col]
-        ax_ratio = axes[1, col]
-
-        for pk_key, k_key, label, color in COMPONENT_SPECS:
-            if pk_key not in axicamb_data or pk_key not in axhm_data:
-                continue
-
-            k_axicamb = np.asarray(axicamb_data[k_key], dtype=float)
-            pk_axicamb = np.asarray(axicamb_data[pk_key][col], dtype=float)
-            k_axhm = np.asarray(axhm_data[k_key], dtype=float)
-            pk_axhm = np.asarray(axhm_data[pk_key][col], dtype=float)
-
-            ax_top.plot(
-                k_axicamb,
-                pk_axicamb,
-                color=color,
-                lw=2.4,
-                alpha=0.7,
-                solid_capstyle="round",
-            )
-            ax_top.plot(
-                k_axhm,
-                pk_axhm,
-                color=color,
-                lw=1.6,
-                ls=(0, (6, 3)),
-                zorder=3,
-            )
-
-            k_ratio, ratio = overlapping_ratio(k_axicamb, pk_axicamb, k_axhm, pk_axhm)
-            ax_ratio.plot(k_ratio, ratio, color=color, lw=2.0, label=label)
-
-        ax_top.set_xscale("log")
-        ax_top.set_yscale("log")
-        ax_top.set_xlim(K_MIN, K_MAX)
-        ax_top.set_ylim(bottom=PK_MIN)
-        ax_top.set_title(f"z = {z:.2f}")
-        ax_top.set_ylabel(r"$P(k)\,[h^{-3}\,\mathrm{Mpc}^3]$")
-        ax_top.grid(alpha=0.25, which="both")
-
-        ax_ratio.set_xscale("log")
-        ax_ratio.set_xlim(K_MIN, K_MAX)
-        ax_ratio.axhline(1.0, color="0.25", lw=1.0, ls=":")
-        ax_ratio.set_xlabel(r"$k\,[h\,\mathrm{Mpc}^{-1}]$")
-        ax_ratio.set_ylabel("AxiCAMB / axionCAMB")
-        ax_ratio.set_ylim(0.9, 1.1)
-        ax_ratio.grid(alpha=0.25, which="both")
-
-    component_handles = [
-        Line2D([0], [0], color=color, lw=2.5, label=label)
-        for _, _, label, color in COMPONENT_SPECS
-    ]
-    style_handles = [
-        Line2D([0], [0], color="0.2", lw=2.4, alpha=0.7, label="AxiCAMB"),
-        Line2D([0], [0], color="0.2", lw=1.6, ls=(0, (6, 3)), label="axionCAMB"),
-    ]
-    fig.legend(
-        component_handles,
-        [h.get_label() for h in component_handles],
-        loc="upper center",
-        ncol=3,
-        frameon=False,
-        bbox_to_anchor=(0.5, 0.955),
-    )
-    fig.legend(
-        style_handles,
-        [h.get_label() for h in style_handles],
-        loc="upper center",
-        ncol=2,
-        frameon=False,
-        bbox_to_anchor=(0.5, 0.915),
-    )
-    fig.suptitle(build_title(axicamb_data, axhm_data) + " (linear ingredients)", y=0.99)
-    fig.tight_layout(rect=(0, 0, 1, 0.88))
-    fig.savefig(output, dpi=150)
-
-
-def component_output_path(output):
-    root, ext = os.path.splitext(output)
-    if not ext:
-        ext = ".pdf"
-    return root + "_components" + ext
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--axicamb", type=str, required=True, help="Path to AxiCAMB .npz export")
-    parser.add_argument(
-        "--axionhmcode", type=str, required=True, help="Path to axionHMcode .npz export"
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=os.path.join(FIGDIR, "pk_comparison.pdf"),
-        help="Output figure path",
-    )
-    parser.add_argument(
-        "--show_naive", action="store_true",
-        help="Include naive CAMB nonlinear for axion",
-    )
-    return parser.parse_args()
 
 
 def main():
-    args = parse_args()
-    axicamb_data = load_export(args.axicamb)
-    axhm_data = load_export(args.axionhmcode)
-    outdir = os.path.dirname(args.output)
-    if outdir:
-        os.makedirs(outdir, exist_ok=True)
-    model_specs = MODEL_SPECS if args.show_naive else [
-        s for s in MODEL_SPECS if "naive" not in s[0]
-    ]
-    plot_comparison(axicamb_data, axhm_data, args.output, model_specs=model_specs)
-    components_output = component_output_path(args.output)
-    plot_linear_components(axicamb_data, axhm_data, components_output)
-    print(f"Saved {args.output}")
-    print(f"Saved {components_output}")
+    parser = argparse.ArgumentParser(description='Compare AxiCAMB vs AxiECAMB P(k)')
+    cosmo_params.add_cli_args(parser)
+    parser.add_argument('--z', type=float, nargs='+', default=[0.0, 1.0, 2.0, 3.0])
+    args = parser.parse_args()
+
+    cosmo, axion = cosmo_params.from_args(args)
+    z_arr = sorted(args.z)
+
+    print(f'Parameters: m_ax={axion["m_ax"]:.0e}, f_ax={axion["f_ax"]}, '
+          f'z={z_arr}, movH={axion["movH_switch"]}')
+    print()
+
+    # Run AxiCAMB
+    print('Running AxiCAMB...')
+    ax_kw = cosmo_params.get_axicamb_kwargs(cosmo, axion)
+    ax = axicamb_runner.run(z_arr=z_arr, **ax_kw)
+
+    # Run AxiECAMB
+    print('Running AxiECAMB...')
+    ae_kw = cosmo_params.get_axiecamb_kwargs(cosmo, axion)
+    ae = axiecamb_runner.run(z_arr=z_arr, **ae_kw)
+
+    # LCDM reference
+    print('Running LCDM...')
+    lcdm_kw = cosmo_params.get_lcdm_kwargs(cosmo)
+    k_lcdm, z_lcdm, pk_lcdm = axicamb_runner.get_lcdm_pk(z_arr=z_arr, **lcdm_kw)
+
+    # Plot
+    nz = len(z_arr)
+    fig, axes = plt.subplots(2, nz, figsize=(5 * nz, 8),
+                              gridspec_kw={'height_ratios': [2, 1]},
+                              sharex='col')
+    if nz == 1:
+        axes = axes.reshape(2, 1)
+
+    k_compare = np.geomspace(0.01, min(ax['k'].max(), ae['k'].max(), 10), 200)
+
+    for iz, z in enumerate(z_arr):
+        iz_ax = np.argmin(np.abs(ax['z'] - z))
+        iz_ae = np.argmin(np.abs(ae['z'] - z))
+        iz_lcdm = np.argmin(np.abs(z_lcdm - z))
+
+        # Top: P(k)
+        a = axes[0, iz]
+        a.loglog(ax['k'], ax['pk'][iz_ax], 'r-', lw=1.5, label='AxiCAMB')
+        a.loglog(ae['k'], ae['pk'][iz_ae], 'g--', lw=1.5, label='AxiECAMB')
+        a.loglog(k_lcdm, pk_lcdm[iz_lcdm], 'k:', lw=1, alpha=0.5, label='LCDM')
+        a.set_title(f'z = {z:.1f}')
+        a.set_xlim(0.01, 10)
+        a.grid(alpha=0.3)
+        if iz == 0:
+            a.set_ylabel(r'$P(k)$ [$(\mathrm{Mpc}/h)^3$]')
+            a.legend(fontsize=8)
+
+        # Bottom: ratio
+        a2 = axes[1, iz]
+        f_ax_interp = interp1d(np.log(ax['k']), np.log(ax['pk'][iz_ax]),
+                                bounds_error=False, fill_value=np.nan)
+        f_ae_interp = interp1d(np.log(ae['k']), np.log(ae['pk'][iz_ae]),
+                                bounds_error=False, fill_value=np.nan)
+        ratio = np.exp(f_ax_interp(np.log(k_compare))) / \
+                np.exp(f_ae_interp(np.log(k_compare)))
+        valid = np.isfinite(ratio)
+        a2.semilogx(k_compare[valid], (ratio[valid] - 1) * 100, 'k-', lw=1.5)
+        a2.axhline(0, color='gray', ls=':', alpha=0.5)
+        a2.axhspan(-0.1, 0.1, color='gray', alpha=0.1)
+        a2.set_xlabel(r'$k$ [$h$/Mpc]')
+        a2.set_xlim(0.01, 10)
+        a2.set_ylim(-1, 1)
+        a2.grid(alpha=0.3)
+        if iz == 0:
+            a2.set_ylabel('AxiCAMB / AxiECAMB - 1 [%]')
+
+    fig.suptitle(
+        f'$m_a = {axion["m_ax"]:.0e}$ eV, $f_{{ax}} = {axion["f_ax"]}$, '
+        f'movH={axion["movH_switch"]:.0f}',
+        fontsize=13)
+    plt.tight_layout()
+
+    tag = f'm{axion["m_ax"]:.0e}_f{axion["f_ax"]}_movH{axion["movH_switch"]:.0f}'.replace('.', 'p')
+    outpath = os.path.join(FIGDIR, f'pk_comparison_{tag}.pdf')
+    plt.savefig(outpath, dpi=150, bbox_inches='tight')
+    print(f'\nSaved {outpath}')
+
+    # Summary
+    ae_s8 = [s for s in ae['sigma8'] if not np.isnan(s)]
+    print(f'\nsigma8(z=0): AxiCAMB={ax["sigma8"]:.4f}, AxiECAMB={ae_s8[-1]:.4f}')
+
+    # Use last z for summary ratios
+    iz_ax = np.argmin(np.abs(ax['z'] - z_arr[0]))
+    iz_ae = np.argmin(np.abs(ae['z'] - z_arr[0]))
+    f_ax_interp = interp1d(np.log(ax['k']), np.log(ax['pk'][iz_ax]),
+                            bounds_error=False, fill_value=np.nan)
+    f_ae_interp = interp1d(np.log(ae['k']), np.log(ae['pk'][iz_ae]),
+                            bounds_error=False, fill_value=np.nan)
+    print(f'\nP(k) ratio AxiCAMB/AxiECAMB at z={z_arr[0]}:')
+    for kval in [0.01, 0.1, 0.5, 1.0, 2.0, 5.0]:
+        r = np.exp(f_ax_interp(np.log(kval))) / np.exp(f_ae_interp(np.log(kval)))
+        if np.isfinite(r):
+            print(f'  k={kval}: {r:.4f}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

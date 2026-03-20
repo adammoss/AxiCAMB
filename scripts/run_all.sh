@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generate all comparison figures between AxiCAMB and AxiECAMB.
-# Run from the comparisons/ directory.
+# Run from the scripts/ directory.
 
 set -e
 cd "$(dirname "$0")"
