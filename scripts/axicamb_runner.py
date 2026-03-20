@@ -12,6 +12,7 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         ns=0.96605, As=2.10058e-9, tau=0.0543,
         kmax=50.0, use_PH=True, mH=50.0, DoLateRadTruncation=True,
         nonlinear=False, halofit_version='mead2020',
+        external_ratio=None, accuracy_boost=1,
         get_cls=False, do_lensing=False, lmax=2500,
         verbose=True, **cosmo_kwargs):
     """Run AxiCAMB and return matter power spectra and optionally Cls.
@@ -48,7 +49,14 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
         oscillation_threshold=1, use_PH=use_PH, mH=mH)
 
     pars.set_for_lmax(lmax, lens_potential_accuracy=1)
-    if nonlinear:
+    pars.set_accuracy(AccuracyBoost=accuracy_boost)
+    if external_ratio is not None:
+        from camb.nonlinear import ExternalNonLinearRatio
+        ratio_k, ratio_z, ratio_arr = external_ratio
+        pars.NonLinear = model.NonLinear_lens
+        pars.NonLinearModel = ExternalNonLinearRatio()
+        pars.NonLinearModel.set_ratio(ratio_k, ratio_z, ratio_arr)
+    elif nonlinear:
         pars.NonLinear = model.NonLinear_both
         pars.NonLinearModel.halofit_version = halofit_version
     else:
@@ -138,6 +146,7 @@ def get_lcdm(z_arr=(0.0,), ombh2=0.022383, omch2=0.12011,
              H0=67.32, ns=0.96605, As=2.10058e-9, tau=0.0543,
              kmax=50.0, get_cls=False, do_lensing=False, lmax=2500,
              nonlinear=False, halofit_version='mead2020',
+             external_ratio=None, accuracy_boost=1,
              **cosmo_kwargs):
     """Get LCDM P(k) and optionally Cls."""
     pars = camb.CAMBparams()
@@ -145,7 +154,14 @@ def get_lcdm(z_arr=(0.0,), ombh2=0.022383, omch2=0.12011,
                        **cosmo_kwargs)
     pars.InitPower.set_params(As=As, ns=ns)
     pars.set_for_lmax(lmax, lens_potential_accuracy=1)
-    if nonlinear:
+    pars.set_accuracy(AccuracyBoost=accuracy_boost)
+    if external_ratio is not None:
+        from camb.nonlinear import ExternalNonLinearRatio
+        ratio_k, ratio_z, ratio_arr = external_ratio
+        pars.NonLinear = model.NonLinear_lens
+        pars.NonLinearModel = ExternalNonLinearRatio()
+        pars.NonLinearModel.set_ratio(ratio_k, ratio_z, ratio_arr)
+    elif nonlinear:
         pars.NonLinear = model.NonLinear_both
         pars.NonLinearModel.halofit_version = halofit_version
     else:
@@ -328,4 +344,64 @@ def get_axionhmcode_pk(result, m_ax, dome_calibrated=False,
         'pk_total': comp['pk_total'],
         'pk_cold': comp['pk_cold'],
         'pk_axion': comp['pk_axion'],
+    }
+
+
+def run_with_axionhmcode(m_ax=1e-24, f_ax=0.3, z_arr=None,
+                          dome_calibrated=False, lmax=2500,
+                          accuracy_boost=1, axionhmcode_path=None,
+                          verbose=True, **kwargs):
+    """Full pipeline: linear AxiCAMB → axionHMcode P_NL → lensed Cls.
+
+    Returns
+    -------
+    dict with:
+        'linear': result from run() (linear spectra)
+        'hmcode': result from get_axionhmcode_pk() (NL spectra)
+        'ratio': sqrt(P_NL/P_lin) ratio array
+        'cls': lensed Cls dict
+        'results': CAMB results from the lensed Cls run
+    """
+    if z_arr is None:
+        z_arr = np.array([0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0])
+
+    # Step 1: Linear run
+    if verbose:
+        print(f'Running AxiCAMB linear (f_ax={f_ax})...')
+    linear = run(m_ax=m_ax, f_ax=f_ax, z_arr=z_arr,
+                 lmax=lmax, accuracy_boost=accuracy_boost,
+                 verbose=verbose, **kwargs)
+
+    # Step 2: axionHMcode P_NL
+    if verbose:
+        tag = 'DOME' if dome_calibrated else 'basic'
+        print(f'Computing axionHMcode {tag}...')
+    hmcode = get_axionhmcode_pk(
+        linear, m_ax=m_ax, dome_calibrated=dome_calibrated,
+        axionhmcode_path=axionhmcode_path, verbose=verbose)
+
+    # Step 3: Compute ratio
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = np.sqrt(hmcode['pk_nl'] / hmcode['pk_total'])
+        ratio = np.nan_to_num(ratio, nan=1.0, posinf=1.0, neginf=1.0)
+        max_ratio = 20.0
+        if ratio.max() > max_ratio:
+            if verbose:
+                print(f'   WARNING: Capping ratio (max={ratio.max():.2e}) to {max_ratio}')
+            ratio = np.clip(ratio, 0.0, max_ratio)
+
+    # Step 4: Lensed Cls with external ratio
+    if verbose:
+        print('Computing lensed Cls with axionHMcode ratio...')
+    ext = run(m_ax=m_ax, f_ax=f_ax, z_arr=z_arr,
+              external_ratio=(hmcode['k'], hmcode['z'], ratio),
+              get_cls=True, do_lensing=True, lmax=lmax,
+              accuracy_boost=accuracy_boost, verbose=False, **kwargs)
+
+    return {
+        'linear': linear,
+        'hmcode': hmcode,
+        'ratio': ratio,
+        'cls': ext['cls'],
+        'results': ext['results'],
     }
