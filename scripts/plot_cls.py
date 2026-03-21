@@ -86,7 +86,7 @@ def main():
     ell = np.arange(args.lmax + 1)
 
     models = [
-        ('Linear', ax_lin['cls'], 'C0', '--'),
+        ('Axion linear', ax_lin['cls'], 'C0', '--'),
         ('Naive HMCode', ax_naive['cls'], 'C2', '-'),
         ('axionHMcode basic', ax_basic['cls'], 'C0', '-'),
         ('axionHMcode DOME', ax_dome['cls'], 'C3', '-'),
