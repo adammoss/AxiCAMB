@@ -14,4 +14,4 @@ python plot_cls.py --f_ax 0.3 --m_ax 1e-24 --layout column --Alens 1.05
 python plot_cls.py --f_ax 0.3 --m_ax 1e-25 --layout column --Alens 1.05
 
 echo "=== Done ==="
-ls figures/pk_*.pdf figures/cls_*.pdf 2>/dev/null
+ls figures/pk_*.pdf figures/cls_*.pdf figures/clpp_*.pdf 2>/dev/null

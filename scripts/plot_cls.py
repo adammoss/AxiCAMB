@@ -144,6 +144,51 @@ def main():
     print(f'\nSaved {outpath}')
     plt.close()
 
+    # Lensing potential plot
+    if 'pp' in lcdm['cls']:
+        import matplotlib.gridspec as gridspec
+        fig_pp = plt.figure(figsize=(4.5, 5))
+        gs = gridspec.GridSpec(2, 1, height_ratios=[2, 1], hspace=0)
+        ax_top = fig_pp.add_subplot(gs[0])
+        ax_bot = fig_pp.add_subplot(gs[1], sharex=ax_top)
+        plt.setp(ax_top.get_xticklabels(), visible=False)
+
+        ref_pp = lcdm['cls']['pp']
+        valid_pp = np.abs(ref_pp) > 1e-10 * np.max(np.abs(ref_pp))
+
+        # Top: absolute spectra
+        ax_top.loglog(ell[2:], ref_pp[2:], color='k', ls='-', lw=1.2,
+                      label=r'$\Lambda$CDM HMCode')
+        for name, cls, color, ls in models:
+            if 'pp' not in cls:
+                continue
+            ax_top.loglog(ell[2:], cls['pp'][2:], color=color, ls=ls,
+                          lw=1.2, label=name)
+        ax_top.set_ylabel(r'$[L(L+1)]^2 C_L^{\phi\phi} / 2\pi$')
+        ax_top.set_xlim(2, args.lmax)
+        ax_top.legend(fontsize=6.5, loc='lower left')
+        ax_top.grid(True, alpha=0.2)
+
+        # Bottom: ratio
+        for name, cls, color, ls in models:
+            if 'pp' not in cls:
+                continue
+            ratio = np.ones_like(ref_pp)
+            ratio[valid_pp] = cls['pp'][valid_pp] / ref_pp[valid_pp]
+            ax_bot.semilogx(ell[2:], (ratio[2:] - 1) * 100, color=color, ls=ls,
+                            lw=1.2)
+        ax_bot.axhline(0, color='k', ls=':', alpha=0.5, lw=0.8)
+        ax_bot.set_xlabel(r'$L$')
+        ax_bot.set_ylabel(r'$C_L^{\phi\phi} / C_L^{\phi\phi,\,\Lambda\mathrm{CDM}} - 1$ [%]')
+        ax_bot.set_xlim(2, args.lmax)
+        ax_bot.grid(True, alpha=0.2)
+
+        plt.tight_layout()
+        outpath_pp = os.path.join(FIGDIR, f'clpp_{tag.replace("cls_", "")}.pdf')
+        plt.savefig(outpath_pp, dpi=150, bbox_inches='tight')
+        print(f'Saved {outpath_pp}')
+        plt.close()
+
 
 if __name__ == '__main__':
     main()

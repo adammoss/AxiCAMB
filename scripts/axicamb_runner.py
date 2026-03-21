@@ -98,6 +98,9 @@ def run(m_ax=1e-24, f_ax=0.3, z_arr=(0.0,),
             'ee': cls_data[:, 1],
             'te': cls_data[:, 3],
         }
+        if do_lensing:
+            lens_pot = results.get_lens_potential_cls(lmax=lmax)
+            cls['pp'] = lens_pot[:, 0]
 
     return {
         'k': k_h,
@@ -196,6 +199,9 @@ def get_lcdm(z_arr=(0.0,), ombh2=0.022383, omch2=0.12011,
             'ee': cls_data[:, 1],
             'te': cls_data[:, 3],
         }
+        if do_lensing:
+            lens_pot = results.get_lens_potential_cls(lmax=lmax)
+            cls['pp'] = lens_pot[:, 0]
 
     return {
         'k': k_h,
