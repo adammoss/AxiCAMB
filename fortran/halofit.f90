@@ -1051,7 +1051,7 @@
         cosm%om_c=(CP%omch2+omega_ax_h2)/h2
         cosm%om_b=CP%ombh2/h2
         cosm%om_nu=CP%omnuh2/h2
-        cosm%om_v=State%omega_de
+        cosm%om_v=State%omega_de - omega_ax_h2/h2
         call CP%DarkEnergy%Effective_w_wa(cosm%w, cosm%wa)
         cosm%f_nu=cosm%om_nu/cosm%om_m
         cosm%h=CP%H0/100
