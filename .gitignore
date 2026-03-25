@@ -43,7 +43,9 @@ notes/
 scripts/figures/
 scripts/*.dat
 scripts/*.npz
+scripts/test_data/
 output/
-comparisons/
 axicamb_background.txt
 paper
+references
+mcmc

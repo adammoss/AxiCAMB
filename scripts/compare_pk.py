@@ -101,7 +101,8 @@ def main():
         fontsize=13)
     plt.tight_layout()
 
-    tag = f'm{axion["m_ax"]:.0e}_f{axion["f_ax"]}_movH{axion["movH_switch"]:.0f}'.replace('.', 'p')
+    z_tag = '_'.join(f'z{z:g}' for z in z_arr)
+    tag = f'm{axion["m_ax"]:.0e}_f{axion["f_ax"]}_{z_tag}_movH{axion["movH_switch"]:.0f}'.replace('.', 'p')
     outpath = os.path.join(FIGDIR, f'pk_comparison_{tag}.pdf')
     plt.savefig(outpath, dpi=150, bbox_inches='tight')
     print(f'\nSaved {outpath}')

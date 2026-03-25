@@ -650,6 +650,21 @@
             END DO
             !$OMP END PARALLEL DO
 
+            IF(FeedbackLevel>1) THEN
+                IF(j==1) THEN
+                    OPEN(unit=97, file='hmcode_nl_dump.dat', status='replace')
+                ELSE
+                    OPEN(unit=97, file='hmcode_nl_dump.dat', position='append')
+                END IF
+                DO i=1,nk
+                    k=exp(CAMB_Pk%log_kh(i))
+                    plin=p_lin(k,z,0,cosi)
+                    CALL this%halomod(k,p1h,p2h,pfull,plin,lut,cosi)
+                    WRITE(97,'(7ES20.10)') k, z, plin, p1h, p2h, pfull, CAMB_Pk%nonlin_ratio(i,j)
+                END DO
+                CLOSE(97)
+            END IF
+
         END IF
 
     END DO
@@ -972,6 +987,15 @@
     cosm%log_plin=log(Pk/(g**2))
     cosm%log_plinc=log(Pkc/(g**2))
 
+    !Dump P(k) tables for external validation
+    IF(HM_verbose) THEN
+        OPEN(unit=99, file='hmcode_pk_dump.dat', status='replace')
+        DO i=1,nk
+            WRITE(99,'(5ES20.10)') k(i), cosm%log_plin(i), cosm%log_plinc(i), Pk(i), Pkc(i)
+        END DO
+        CLOSE(99)
+    END IF
+
     !Check sigma_8 value
     IF(HM_verbose) WRITE(*,*) 'LINEAR POWER: sigma_8:', sigma_integral(8.d0,0.d0,0,cosm)
     IF(HM_verbose) WRITE(*,*) 'LINEAR POWER: Done'
@@ -1222,6 +1246,30 @@
     lut%neff=neff(this,lut,cosm)
 
     IF(HM_verbose) WRITE(*,*) 'HALOMOD: n_eff:', lut%neff
+
+    !Dump HMCode parameters for external validation
+    IF(FeedbackLevel>1) THEN
+        IF(HM_verbose) THEN
+            !First z: write header with cosmological parameters
+            OPEN(unit=96, file='hmcode_params_dump.dat', status='replace')
+            WRITE(96,'(A,ES20.10)') 'om_m ', cosm%om_m
+            WRITE(96,'(A,ES20.10)') 'om_v ', cosm%om_v
+            WRITE(96,'(A,ES20.10)') 'om_c ', cosm%om_c
+            WRITE(96,'(A,ES20.10)') 'om_b ', cosm%om_b
+            WRITE(96,'(A,ES20.10)') 'f_nu ', cosm%f_nu
+            WRITE(96,'(A,ES20.10)') 'ns ', cosm%ns
+            WRITE(96,'(A,ES20.10)') 'h ', cosm%h
+            WRITE(96,'(A,ES20.10)') 'sigma_8 ', sigma_integral(8.d0,0.d0,0,cosm)
+            WRITE(96,'(A,ES20.10)') 'sigma_8_cold ', sigma_integral(8.d0,0.d0,1,cosm)
+            WRITE(96,'(A)') '# z-dependent parameters: z sig8z sig8z_cold dc r_nl k_nl sigma_rnl n_eff nu_min nu_max sigv sigv100 alpha'
+        ELSE
+            OPEN(unit=96, file='hmcode_params_dump.dat', position='append')
+        END IF
+        WRITE(96,'(13ES16.8)') lut%z, lut%sig8z, lut%sig8z_cold, lut%dc, &
+            lut%rnl, lut%knl, sigma_lut(lut%rnl,lut%z,cosm), lut%neff, &
+            lut%nu(1), lut%nu(lut%n), lut%sigv, lut%sigv100, this%alpha(lut)
+        CLOSE(96)
+    END IF
 
     !Get the concentration for all the haloes
     CALL this%conc_bull(z,lut,cosm)
@@ -2033,7 +2081,6 @@
 
     IF(HM_verbose) WRITE(*,*) 'SIGTAB: sigma_min:', sig(nsig)
     IF(HM_verbose) WRITE(*,*) 'SIGTAB: sigma_max:', sig(1)
-
     cosm%nsig=nsig
     ALLOCATE(cosm%log_r_sigma(nsig),cosm%log_sigma(nsig))
     cosm%log_r_sigma=log(r)

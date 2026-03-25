@@ -86,7 +86,7 @@ def get_lcdm_kwargs(cosmo=None):
 
 def add_cli_args(parser):
     """Add common cosmology CLI arguments to an argparse parser."""
-    parser.add_argument('--m_ax', type=float, default=AXION_DEFAULT['m_ax'])
+    parser.add_argument('--m_ax', type=float, nargs='+', default=[AXION_DEFAULT['m_ax']])
     parser.add_argument('--f_ax', type=float, default=AXION_DEFAULT['f_ax'])
     parser.add_argument('--mnu', type=float, default=DEFAULT['mnu'])
     parser.add_argument('--movH_switch', type=float, default=AXION_DEFAULT['movH_switch'],
@@ -111,8 +111,10 @@ def from_args(args):
         'tau': args.tau,
         'mnu': args.mnu,
     }
+    m_ax = args.m_ax if isinstance(args.m_ax, list) else [args.m_ax]
     axion = {
-        'm_ax': args.m_ax,
+        'm_ax': m_ax[0],
+        'm_ax_list': m_ax,
         'f_ax': args.f_ax,
         'movH_switch': args.movH_switch,
     }

@@ -8,6 +8,7 @@ Requires: AxiCAMB, axionHMcode, matplotlib, scipy
 Usage:
     python plot_pk.py [options]
     python plot_pk.py --f_ax 0.3 --m_ax 1e-24 --z 0.0 1.0 2.0
+    python plot_pk.py --m_ax 1e-26 1e-25 1e-24 --z 0.0 1.0 2.0
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -106,7 +107,123 @@ def save_pk_data(path, z_arr, lcdm_data, axion_basic, axion_dome, axion_naive,
     )
 
 
+def compute_mass(m_ax, f_ax, cosmo, axion_base, z_compute, args):
+    """Compute all spectra for a single axion mass. Returns dict of results."""
+    axion = {**axion_base, 'm_ax': m_ax}
+    ax_kw = cosmo_params.get_axicamb_kwargs(cosmo, axion)
+
+    print(f'\nRunning AxiCAMB for m_ax={m_ax:.2e}, f={f_ax}...')
+    ax_result = axicamb_runner.run(z_arr=z_compute, **ax_kw)
+
+    axion_results = {}
+    for dome in [False, True]:
+        label = 'DOME' if dome else 'basic'
+        print(f'  axionHMcode {label}...')
+        hmcode = axicamb_runner.get_axionhmcode_pk(
+            ax_result, m_ax=m_ax, dome_calibrated=dome,
+            axionhmcode_path=args.axionHMcode_path)
+        axion_results[dome] = hmcode
+
+    axion_naive = None
+    if args.show_naive:
+        print(f'  Naive HMCode-2020...')
+        naive_result = axicamb_runner.run(z_arr=z_compute, nonlinear=True, **ax_kw)
+        axion_naive = {'k': naive_result['k'], 'z': naive_result['z'],
+                       'pk_nl': naive_result['pk_nl']}
+
+    return {'axion_results': axion_results, 'axion_naive': axion_naive}
+
+
+def plot_panel(ax_top, ax_bot, zi, lcdm_data, mass_data, show_legend=False,
+               show_ylabel=True, show_xlabel=True, label_text=None):
+    """Plot a single (P(k), ratio) panel pair for one redshift and one mass."""
+    z_lcdm = lcdm_data['z']
+    k_lcdm = lcdm_data['k']
+    axion_results = mass_data['axion_results']
+    axion_naive = mass_data['axion_naive']
+    k_ax = axion_results[False]['k']
+    z_ax = axion_results[False]['z']
+
+    iz_lcdm = get_redshift_index(z_lcdm, zi)
+    iz_ax = get_redshift_index(z_ax, zi)
+
+    # --- Top: absolute P(k) ---
+    ax_top.loglog(k_ax, axion_results[False]['pk_total'][iz_ax], color='C0',
+                  ls='--', lw=1.2, alpha=0.7,
+                  label=r'Axion linear' if show_legend else None)
+    ax_top.loglog(k_lcdm, lcdm_data['pk'][iz_lcdm], color='k', ls='--',
+                  lw=1.2, alpha=0.7,
+                  label=r'$\Lambda$CDM linear' if show_legend else None)
+
+    for dome in [False, True]:
+        color = 'C3' if dome else 'C0'
+        tag = 'DOME' if dome else 'basic'
+        iz_hm = get_redshift_index(axion_results[dome]['z'], zi)
+        ax_top.loglog(axion_results[dome]['k'],
+                      axion_results[dome]['pk_nl'][iz_hm],
+                      color=color, ls='-', lw=1.2,
+                      label=f'axionHMcode {tag}' if show_legend else None)
+
+    if axion_naive is not None:
+        iz_naive = get_redshift_index(axion_naive['z'], zi)
+        ax_top.loglog(axion_naive['k'], axion_naive['pk_nl'][iz_naive],
+                      color='C2', ls='-', lw=1.2,
+                      label=r'Naive HMCode' if show_legend else None)
+
+    ax_top.loglog(k_lcdm, lcdm_data['pk_nl'][iz_lcdm], color='k', ls='-',
+                  lw=1.2,
+                  label=r'$\Lambda$CDM HMCode' if show_legend else None)
+
+    if label_text:
+        ax_top.text(0.95, 0.95, label_text, transform=ax_top.transAxes,
+                    fontsize=9, ha='right', va='top')
+    ax_top.grid(True, alpha=0.2)
+    ax_top.set_xlim(1e-2, 50)
+    if show_ylabel:
+        ax_top.set_ylabel(r'$P(k)$ [$(h^{-1}\,\mathrm{Mpc})^3$]')
+    if show_legend:
+        ax_top.legend(fontsize=6.5, loc='lower left', framealpha=0.8)
+
+    # --- Bottom: ratio to NL LCDM ---
+    interp_nl_lcdm = interp1d(k_lcdm, lcdm_data['pk_nl'][iz_lcdm],
+                               bounds_error=False, fill_value=np.nan)
+
+    for dome in [False, True]:
+        color = 'C3' if dome else 'C0'
+        tag = 'DOME' if dome else 'basic'
+        iz_hm = get_redshift_index(axion_results[dome]['z'], zi)
+        k_hm = axion_results[dome]['k']
+        pk_nl_lcdm_interp = interp_nl_lcdm(k_hm)
+        valid = np.isfinite(pk_nl_lcdm_interp) & (pk_nl_lcdm_interp > 0)
+        ratio_nl = (axion_results[dome]['pk_nl'][iz_hm, valid]
+                    / pk_nl_lcdm_interp[valid])
+        ax_bot.semilogx(k_hm[valid], ratio_nl, color=color, ls='-', lw=1.2,
+                        label=f'axionHMcode {tag}' if show_legend else None)
+
+    if axion_naive is not None:
+        iz_naive = get_redshift_index(axion_naive['z'], zi)
+        pk_nl_lcdm_interp = interp_nl_lcdm(axion_naive['k'])
+        valid = np.isfinite(pk_nl_lcdm_interp) & (pk_nl_lcdm_interp > 0)
+        ratio_nl = (axion_naive['pk_nl'][iz_naive, valid]
+                    / pk_nl_lcdm_interp[valid])
+        ax_bot.semilogx(axion_naive['k'][valid], ratio_nl, color='C2', ls='-',
+                        lw=1.2,
+                        label=r'Naive HMCode' if show_legend else None)
+
+    ax_bot.axhline(1.0, color='k', ls=':', alpha=0.5, lw=0.8)
+    if show_xlabel:
+        ax_bot.set_xlabel(r'$k$ [$h\,\mathrm{Mpc}^{-1}$]')
+    ax_bot.grid(True, alpha=0.2)
+    ax_bot.set_ylim(0.3, 1.8)
+    ax_bot.set_xlim(1e-2, 50)
+    if show_ylabel:
+        ax_bot.set_ylabel(r'$P_\mathrm{NL}^\mathrm{axion} / '
+                          r'P_\mathrm{NL}^{\Lambda\mathrm{CDM}}$')
+
+
 if __name__ == '__main__':
+    import matplotlib.gridspec as gridspec
+
     parser = argparse.ArgumentParser(description='Plot P(k) comparisons')
     parser.add_argument('--axionHMcode_path', type=str,
                         default='/Users/adammoss/work/code/axionHMcode',
@@ -126,43 +243,36 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cosmo, axion = cosmo_params.from_args(args)
-    m_ax = axion['m_ax']
+    m_ax_list = axion['m_ax_list']
     f_ax = axion['f_ax']
     z_plot, z_compute = prepare_redshifts(args.z)
+    nz = len(z_plot)
+    nm = len(m_ax_list)
 
-    # --- Compute ---
+    # --- Compute LCDM (shared across masses) ---
     print('Computing LCDM Halofit...')
     lcdm_kw = cosmo_params.get_lcdm_kwargs(cosmo)
     lcdm_data = axicamb_runner.get_lcdm(z_arr=z_compute, nonlinear=True, **lcdm_kw)
 
-    print(f'\nRunning AxiCAMB for f={f_ax}...')
-    ax_kw = cosmo_params.get_axicamb_kwargs(cosmo, axion)
-    ax_result = axicamb_runner.run(z_arr=z_compute, **ax_kw)
+    # --- Compute axion spectra per mass ---
+    all_mass_data = {}
+    for m_ax in m_ax_list:
+        all_mass_data[m_ax] = compute_mass(
+            m_ax, f_ax, cosmo, axion, z_compute, args)
 
-    axion_results = {}
-    for dome in [False, True]:
-        label = 'DOME' if dome else 'basic'
-        print(f'\nComputing axionHMcode f={f_ax} {label}...')
-        hmcode = axicamb_runner.get_axionhmcode_pk(
-            ax_result, m_ax=m_ax, dome_calibrated=dome,
-            axionhmcode_path=args.axionHMcode_path)
-        axion_results[dome] = hmcode
-
-    axion_naive = None
-    if args.show_naive:
-        print(f'\nComputing axion CAMB HMCode-2020 f={f_ax} naive...')
-        naive_result = axicamb_runner.run(z_arr=z_compute, nonlinear=True, **ax_kw)
-        axion_naive = {'k': naive_result['k'], 'z': naive_result['z'],
-                       'pk_nl': naive_result['pk_nl']}
-
+    # --- Save data (first mass only, for backward compat) ---
     if args.save_data:
+        m0 = m_ax_list[0]
+        md = all_mass_data[m0]
+        k_lcdm = lcdm_data['k']
         save_pk_data(
             args.save_data, z_compute, lcdm_data,
-            axion_results[False], axion_results[True],
-            axion_naive if axion_naive else {'k': k_lcdm, 'z': lcdm_data['z'],
-                                              'pk_nl': np.zeros_like(lcdm_data['pk_nl'])},
+            md['axion_results'][False], md['axion_results'][True],
+            md['axion_naive'] if md['axion_naive'] else {
+                'k': k_lcdm, 'z': lcdm_data['z'],
+                'pk_nl': np.zeros_like(lcdm_data['pk_nl'])},
             metadata={
-                'm_ax': np.array(m_ax, dtype=float),
+                'm_ax': np.array(m0, dtype=float),
                 'f_ax': np.array(f_ax, dtype=float),
                 'omega_b': np.array(cosmo.get('ombh2', 0.022383), dtype=float),
                 'omega_d': np.array(cosmo.get('omch2_total', 0.12011), dtype=float),
@@ -175,117 +285,98 @@ if __name__ == '__main__':
         print(f'Saved data {args.save_data}')
 
     # --- Plot ---
-    nz = len(z_plot)
-    if args.layout == 'column':
+    if nm > 1:
+        # Multi-mass grid: rows = redshifts, columns = masses
+        fig = plt.figure(figsize=(4.5 * nm, 3.5 * nz))
+        outer = gridspec.GridSpec(nz, nm, hspace=0.3, wspace=0.05)
+        # Track axes for sharing
+        top_axes = {}
+        bot_axes = {}
+        for iz, zi in enumerate(z_plot):
+            for im, m_ax in enumerate(m_ax_list):
+                inner = gridspec.GridSpecFromSubplotSpec(
+                    2, 1, subplot_spec=outer[iz, im],
+                    height_ratios=[2, 1], hspace=0)
+                # Share y axes across columns
+                share_top = top_axes.get(iz)
+                share_bot = bot_axes.get(iz)
+                ax_top = fig.add_subplot(inner[0], sharey=share_top)
+                ax_bot = fig.add_subplot(inner[1], sharex=ax_top, sharey=share_bot)
+                plt.setp(ax_top.get_xticklabels(), visible=False)
+                if im > 0:
+                    plt.setp(ax_top.get_yticklabels(), visible=False)
+                    plt.setp(ax_bot.get_yticklabels(), visible=False)
+                if im == 0:
+                    top_axes[iz] = ax_top
+                    bot_axes[iz] = ax_bot
+
+                label = f'$z = {zi:.0f}$'
+                if iz == 0:
+                    mass_label = format_mass_label(m_ax)
+                    label = (f'$m_a = {mass_label}$ eV\n' + label)
+
+                plot_panel(
+                    ax_top, ax_bot, zi, lcdm_data, all_mass_data[m_ax],
+                    show_legend=(iz == 0 and im == 0),
+                    show_ylabel=(im == 0),
+                    show_xlabel=(iz == nz - 1),
+                    label_text=label,
+                )
+
+        plt.tight_layout()
+        mass_tags = '_'.join(format_mass_tag(m) for m in m_ax_list)
+        tag_file = f'pk_{mass_tags}_f{f_ax}'.replace('.', 'p')
+
+    elif args.layout == 'column':
+        # Single mass, column layout
         fig = plt.figure(figsize=(4.5, 3.5 * nz))
-        import matplotlib.gridspec as gridspec
         outer = gridspec.GridSpec(nz, 1, hspace=0.3)
-        axes = np.empty((2, nz), dtype=object)
-        for iz in range(nz):
+        m_ax = m_ax_list[0]
+        for iz, zi in enumerate(z_plot):
             inner = gridspec.GridSpecFromSubplotSpec(
                 2, 1, subplot_spec=outer[iz], height_ratios=[2, 1], hspace=0)
-            axes[0, iz] = fig.add_subplot(inner[0])
-            axes[1, iz] = fig.add_subplot(inner[1], sharex=axes[0, iz])
-            plt.setp(axes[0, iz].get_xticklabels(), visible=False)
+            ax_top = fig.add_subplot(inner[0])
+            ax_bot = fig.add_subplot(inner[1], sharex=ax_top)
+            plt.setp(ax_top.get_xticklabels(), visible=False)
+
+            plot_panel(
+                ax_top, ax_bot, zi, lcdm_data, all_mass_data[m_ax],
+                show_legend=(iz == 0),
+                show_ylabel=True,
+                show_xlabel=(iz == nz - 1),
+                label_text=f'$z = {zi:.0f}$',
+            )
+
+        plt.tight_layout()
+        tag_file = f'pk_{format_mass_tag(m_ax)}_f{f_ax}'.replace('.', 'p')
+
     else:
-        fig, axes = plt.subplots(2, nz, figsize=(6 * nz, 8),
-                                  gridspec_kw={'height_ratios': [2, 1]},
-                                  sharex='col', sharey='row')
-        if nz == 1:
-            axes = axes.reshape(2, 1)
+        # Single mass, row layout
+        fig = plt.figure(figsize=(6 * nz, 8))
+        outer = gridspec.GridSpec(1, nz, wspace=0.25)
+        m_ax = m_ax_list[0]
+        for iz, zi in enumerate(z_plot):
+            inner = gridspec.GridSpecFromSubplotSpec(
+                2, 1, subplot_spec=outer[0, iz],
+                height_ratios=[2, 1], hspace=0)
+            ax_top = fig.add_subplot(inner[0])
+            ax_bot = fig.add_subplot(inner[1], sharex=ax_top)
+            plt.setp(ax_top.get_xticklabels(), visible=False)
 
-    z_lcdm = lcdm_data['z']
-    k_lcdm = lcdm_data['k']
-    k_ax = axion_results[False]['k']
-    z_ax = axion_results[False]['z']
+            plot_panel(
+                ax_top, ax_bot, zi, lcdm_data, all_mass_data[m_ax],
+                show_legend=(iz == 0),
+                show_ylabel=(iz == 0),
+                show_xlabel=True,
+                label_text=f'$z = {zi:.0f}$',
+            )
 
-    is_column = args.layout == 'column'
-    show_legend = True  # only show legend once
-
-    for iz, zi in enumerate(z_plot):
-        iz_lcdm = get_redshift_index(z_lcdm, zi)
-        iz_ax = get_redshift_index(z_ax, zi)
-
-        # --- Top: absolute P(k) ---
-        ax = axes[0, iz]
-
-        # Linear spectra (dashed)
-        ax.loglog(k_ax, axion_results[False]['pk_total'][iz_ax], color='C0', ls='--',
-                  lw=1.2, alpha=0.7,
-                  label=r'Axion linear' if show_legend else None)
-        ax.loglog(k_lcdm, lcdm_data['pk'][iz_lcdm], color='k', ls='--',
-                  lw=1.2, alpha=0.7,
-                  label=r'$\Lambda$CDM linear' if show_legend else None)
-
-        # Non-linear spectra (solid)
-        for dome in [False, True]:
-            color = 'C3' if dome else 'C0'
-            tag = 'DOME' if dome else 'basic'
-            iz_hm = get_redshift_index(axion_results[dome]['z'], zi)
-            ax.loglog(axion_results[dome]['k'], axion_results[dome]['pk_nl'][iz_hm],
-                      color=color, ls='-', lw=1.2,
-                      label=f'axionHMcode {tag}' if show_legend else None)
-
-        if axion_naive is not None:
-            iz_naive = get_redshift_index(axion_naive['z'], zi)
-            ax.loglog(axion_naive['k'], axion_naive['pk_nl'][iz_naive], color='C2',
-                      ls='-', lw=1.2,
-                      label=r'Naive HMCode' if show_legend else None)
-
-        ax.loglog(k_lcdm, lcdm_data['pk_nl'][iz_lcdm], color='k', ls='-', lw=1.2,
-                  label=r'$\Lambda$CDM HMCode' if show_legend else None)
-
-        ax.text(0.95, 0.95, f'$z = {zi:.0f}$', transform=ax.transAxes,
-                fontsize=9, ha='right', va='top')
-        ax.grid(True, alpha=0.2)
-        ax.set_xlim(1e-2, 50)
-        ax.set_ylabel(r'$P(k)$ [$(h^{-1}\,\mathrm{Mpc})^3$]')
-        if show_legend:
-            ax.legend(fontsize=6.5, loc='lower left', framealpha=0.8)
-
-        # --- Bottom: ratio to NL LCDM ---
-        ax2 = axes[1, iz]
-        interp_nl_lcdm = interp1d(k_lcdm, lcdm_data['pk_nl'][iz_lcdm],
-                                   bounds_error=False, fill_value=np.nan)
-
-        for dome in [False, True]:
-            color = 'C3' if dome else 'C0'
-            tag = 'DOME' if dome else 'basic'
-            iz_hm = get_redshift_index(axion_results[dome]['z'], zi)
-            k_hm = axion_results[dome]['k']
-            pk_nl_lcdm_interp = interp_nl_lcdm(k_hm)
-            valid = np.isfinite(pk_nl_lcdm_interp) & (pk_nl_lcdm_interp > 0)
-            ratio_nl = axion_results[dome]['pk_nl'][iz_hm, valid] / pk_nl_lcdm_interp[valid]
-            ax2.semilogx(k_hm[valid], ratio_nl, color=color, ls='-', lw=1.2,
-                         label=f'axionHMcode {tag}' if show_legend else None)
-
-        if axion_naive is not None:
-            iz_naive = get_redshift_index(axion_naive['z'], zi)
-            pk_nl_lcdm_interp = interp_nl_lcdm(axion_naive['k'])
-            valid = np.isfinite(pk_nl_lcdm_interp) & (pk_nl_lcdm_interp > 0)
-            ratio_nl = axion_naive['pk_nl'][iz_naive, valid] / pk_nl_lcdm_interp[valid]
-            ax2.semilogx(axion_naive['k'][valid], ratio_nl, color='C2', ls='-', lw=1.2,
-                         label=r'Naive HMCode' if show_legend else None)
-
-        ax2.axhline(1.0, color='k', ls=':', alpha=0.5, lw=0.8)
-        if is_column and iz < nz - 1:
-            ax2.set_xlabel('')
-        else:
-            ax2.set_xlabel(r'$k$ [$h\,\mathrm{Mpc}^{-1}$]')
-        ax2.grid(True, alpha=0.2)
-        ax2.set_ylim(0.3, 1.8)
-        ax2.set_xlim(1e-2, 50)
-        ax2.set_ylabel(r'$P_\mathrm{NL}^\mathrm{axion} / '
-                       r'P_\mathrm{NL}^{\Lambda\mathrm{CDM}}$')
-
-        show_legend = False  # only on first panel
-
-    mass_label = format_mass_label(m_ax)
-    if not is_column:
+        mass_label = format_mass_label(m_ax)
         fig.suptitle(f'$m_a = {mass_label}$ eV, $f_\\mathrm{{ax}} = {f_ax}$',
                      fontsize=10)
-    plt.tight_layout()
-    tag_file = f'pk_{format_mass_tag(m_ax)}_f{f_ax}'.replace('.', 'p')
+        plt.tight_layout()
+        tag_file = f'pk_{format_mass_tag(m_ax)}_f{f_ax}'.replace('.', 'p')
+
     plt.savefig(os.path.join(FIGDIR, f'{tag_file}.pdf'), dpi=150,
                 bbox_inches='tight')
     print(f'\nSaved figures/{tag_file}.pdf')

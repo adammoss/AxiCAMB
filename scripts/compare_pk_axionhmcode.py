@@ -90,6 +90,7 @@ def plot_comparison(axicamb_data, axhm_data, output, model_specs=None):
         figsize=(5.2 * ncols, 8.2),
         squeeze=False,
         sharex="col",
+        sharey="row",
     )
 
     for col, z in enumerate(z_arr):
@@ -270,10 +271,23 @@ def parse_args():
     return parser.parse_args()
 
 
+def auto_output_path(data, base_dir):
+    """Generate output filename from mass and fraction in data."""
+    m_ax = float(data.get('m_ax', 0))
+    f_ax = float(data.get('f_ax', 0))
+    tag = f'pk_comparison_m{m_ax:.0e}_f{f_ax}'.replace('.', 'p')
+    return os.path.join(base_dir, f'{tag}.pdf')
+
+
 def main():
     args = parse_args()
     axicamb_data = load_export(args.axicamb)
     axhm_data = load_export(args.axionhmcode)
+
+    # Auto-generate output path from mass/fraction if using default
+    if args.output == os.path.join(FIGDIR, "pk_comparison.pdf"):
+        args.output = auto_output_path(axicamb_data, FIGDIR)
+
     outdir = os.path.dirname(args.output)
     if outdir:
         os.makedirs(outdir, exist_ok=True)
