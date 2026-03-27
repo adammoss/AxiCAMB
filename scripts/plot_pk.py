@@ -313,7 +313,7 @@ if __name__ == '__main__':
                 label = f'$z = {zi:.0f}$'
                 if iz == 0:
                     mass_label = format_mass_label(m_ax)
-                    label = (f'$m_a = {mass_label}$ eV\n' + label)
+                    label = (f'$m = {mass_label}$ eV\n' + label)
 
                 plot_panel(
                     ax_top, ax_bot, zi, lcdm_data, all_mass_data[m_ax],
@@ -372,7 +372,7 @@ if __name__ == '__main__':
             )
 
         mass_label = format_mass_label(m_ax)
-        fig.suptitle(f'$m_a = {mass_label}$ eV, $f_\\mathrm{{ax}} = {f_ax}$',
+        fig.suptitle(f'$m = {mass_label}$ eV, $f_\\mathrm{{ax}} = {f_ax}$',
                      fontsize=10)
         plt.tight_layout()
         tag_file = f'pk_{format_mass_tag(m_ax)}_f{f_ax}'.replace('.', 'p')

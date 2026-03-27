@@ -89,7 +89,7 @@ def main():
     # Compute models for each mass
     all_models = {}
     for m_ax in m_ax_list:
-        print(f'\nComputing m_ax = {m_ax:.0e}...')
+        print(f'\nComputing m = {m_ax:.0e}...')
         axion['m_ax'] = m_ax
         ax_kw = cp.get_axicamb_kwargs(cosmo, axion)
         models = compute_models(ax_kw, lcdm, args)
@@ -142,7 +142,7 @@ def main():
 
         if args.layout != 'column':
             fig.suptitle(
-                f'$m_a = {format_mass_label(m_ax)}$ eV, '
+                f'$m = {format_mass_label(m_ax)}$ eV, '
                 f'$f_\\mathrm{{ax}} = {f_ax}$', fontsize=12)
 
         plt.tight_layout()
@@ -173,7 +173,7 @@ def main():
                 ax.axhline(0, color='k', ls=':', alpha=0.5, lw=0.8)
 
                 if i == 0:
-                    ax.set_title(f'$m_a = {format_mass_label(m_ax)}$ eV')
+                    ax.set_title(f'$m = {format_mass_label(m_ax)}$ eV')
                 if i == 1:
                     ax.set_xlabel(r'$\ell$')
                 if j == 0:

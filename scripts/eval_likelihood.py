@@ -163,6 +163,7 @@ def plot_grid(files, exclude_lensing=False):
     """Plot Delta chi^2 colour maps from saved .npz files."""
     import matplotlib.pyplot as plt
 
+    plt.rcParams.update({'font.size': 14})
     n = len(files)
     fig, axes = plt.subplots(1, n, figsize=(5 * n, 4), squeeze=False)
 
@@ -198,7 +199,7 @@ def plot_grid(files, exclude_lensing=False):
                            vmin=-10, vmax=10)
         ax.set_xlim(m_arr.min(), m_arr.max())
         ax.set_ylim(f_arr.min(), f_arr.max())
-        ax.set_xlabel(r'$\log_{10}(m_a / \mathrm{eV})$')
+        ax.set_xlabel(r'$\log_{10}(m / \mathrm{eV})$')
         if i == 0:
             ax.set_ylabel(r'$f_{\rm ax}$')
         ax.set_title(nl_model + title_suffix)
@@ -208,7 +209,7 @@ def plot_grid(files, exclude_lensing=False):
             cs = ax.contour(m_arr, f_arr, dchi2.T,
                             levels=[-9, -4, -1, 1, 4, 9],
                             colors='k', linewidths=0.8, linestyles='--')
-            ax.clabel(cs, fmt='%.0f', fontsize=7)
+            ax.clabel(cs, fmt='%.0f', fontsize=10)
         except Exception:
             pass
 
@@ -274,19 +275,52 @@ def main():
     f_arr = np.atleast_1d(f_arr)
     chi2_grid = np.full((len(m_arr), len(f_arr)), np.nan)
     chi2_components = {}
+    chi2_lcdm = np.nan
+
+    # Load cache from existing output file
+    cached = 0
+    if args.output and os.path.exists(args.output):
+        print(f'Loading cache from {args.output}...')
+        cache = np.load(args.output, allow_pickle=True)
+        cache_m = cache['m_arr']
+        cache_f = cache['f_arr']
+        chi2_lcdm = float(cache.get('chi2_lcdm', np.nan))
+        for im, m in enumerate(m_arr):
+            for jf, f in enumerate(f_arr):
+                # Find matching indices in cache
+                im_c = np.where(np.isclose(cache_m, m))[0]
+                jf_c = np.where(np.isclose(cache_f, f))[0]
+                if len(im_c) > 0 and len(jf_c) > 0:
+                    val = cache['chi2_total'][im_c[0], jf_c[0]]
+                    if not np.isnan(val):
+                        chi2_grid[im, jf] = val
+                        cached += 1
+                        for key in cache.files:
+                            if key.startswith('chi2_') and key not in ('chi2_total', 'chi2_lcdm'):
+                                comp_name = key[5:]  # strip 'chi2_'
+                                if comp_name not in chi2_components:
+                                    chi2_components[comp_name] = np.full(
+                                        (len(m_arr), len(f_arr)), np.nan)
+                                chi2_components[comp_name][im, jf] = cache[key][im_c[0], jf_c[0]]
+        print(f'Loaded {cached} cached points')
 
     # LCDM reference chi2 (always naive NL at f~0)
-    print('Evaluating LCDM reference (f_axion=0.001, naive NL)...')
-    try:
-        loglikes_lcdm, total_lcdm = eval_point(
-            m_arr[0], 0.001, use_lensing=use_lensing, nl_model='naive')
-        chi2_lcdm = -2 * total_lcdm
-        print(f'LCDM chi2 = {chi2_lcdm:.2f}')
-    except Exception as e:
-        print(f'LCDM evaluation failed: {e}')
-        chi2_lcdm = np.nan
+    if np.isnan(chi2_lcdm):
+        print('Evaluating LCDM reference (f_axion=0.001, naive NL)...')
+        try:
+            loglikes_lcdm, total_lcdm = eval_point(
+                m_arr[0], 0.001, use_lensing=use_lensing, nl_model='naive')
+            chi2_lcdm = -2 * total_lcdm
+            print(f'LCDM chi2 = {chi2_lcdm:.2f}')
+        except Exception as e:
+            print(f'LCDM evaluation failed: {e}')
+            chi2_lcdm = np.nan
+    else:
+        print(f'LCDM chi2 = {chi2_lcdm:.2f} (cached)')
 
+    remaining = np.isnan(chi2_grid).sum()
     print(f'\nGrid: {len(m_arr)} masses x {len(f_arr)} fractions = {len(m_arr)*len(f_arr)} evaluations')
+    print(f'Cached: {cached}, remaining: {remaining}')
     print(f'NL model: {args.nl_model}, lensing: {use_lensing}')
     print()
     print(f'{"log10(m)":>10s} {"f_ax":>8s} {"chi2_total":>12s}', end='')
@@ -294,6 +328,9 @@ def main():
 
     for im, m in enumerate(m_arr):
         for jf, f in enumerate(f_arr):
+            if not np.isnan(chi2_grid[im, jf]):
+                continue  # already cached
+
             try:
                 loglikes, total = eval_point(m, f, use_lensing=use_lensing,
                                              nl_model=args.nl_model)
@@ -304,7 +341,8 @@ def main():
                     for name in loglikes:
                         short = 'chi2_' + name.split('.')[-1][:15]
                         print(f' {short:>20s}', end='')
-                        chi2_components[name] = np.full((len(m_arr), len(f_arr)), np.nan)
+                        if name not in chi2_components:
+                            chi2_components[name] = np.full((len(m_arr), len(f_arr)), np.nan)
                     print()
                     header_printed = True
 
@@ -316,21 +354,21 @@ def main():
                     print(f' {-2*v:20.2f}', end='')
                 print(flush=True)
 
+                # Save after each point so progress is not lost
+                if args.output:
+                    save_data = {
+                        'm_arr': m_arr, 'f_arr': f_arr,
+                        'chi2_total': chi2_grid, 'chi2_lcdm': chi2_lcdm,
+                        'nl_model': args.nl_model, 'use_lensing': use_lensing,
+                    }
+                    for name, grid in chi2_components.items():
+                        save_data['chi2_' + name] = grid
+                    np.savez_compressed(args.output, **save_data)
+
             except Exception as e:
                 print(f'{m:10.2f} {f:8.3f}  ERROR: {e}', flush=True)
 
     if args.output:
-        save_data = {
-            'm_arr': m_arr,
-            'f_arr': f_arr,
-            'chi2_total': chi2_grid,
-            'chi2_lcdm': chi2_lcdm,
-            'nl_model': args.nl_model,
-            'use_lensing': use_lensing,
-        }
-        for name, grid in chi2_components.items():
-            save_data['chi2_' + name] = grid
-        np.savez_compressed(args.output, **save_data)
         print(f'\nSaved {args.output}')
 
 
